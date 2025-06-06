@@ -35,14 +35,15 @@ class Filter:
 class FrankaArmOperator(Operator):
     def __init__(
         self,
-        host,
-        transformed_keypoints_port,
-        use_filter=False,
-        arm_resolution_port = None,
-        teleoperation_reset_port = None,
+        host,  # 主机地址
+        transformed_keypoints_port,  # 手部坐标数据端口
+        use_filter=False,  # 是否使用滤波器
+        arm_resolution_port = None,  # 机器人分辨率模式端口
+        teleoperation_reset_port = None,  # 机器人运动状态端口
     ):
         self.notify_component_start('franka arm operator')
         # Subscribers for the transformed hand keypoints
+        # zwq订阅
         self._transformed_hand_keypoint_subscriber = ZMQKeypointSubscriber(
             host=host,
             port=transformed_keypoints_port,
@@ -72,16 +73,18 @@ class FrankaArmOperator(Operator):
             port = teleoperation_reset_port,
             topic = 'pause'
         )
+
         # Robot Initial Frame
         self.robot_init_H = self.robot.get_pose()['position']
         self.is_first_frame = True
+        self._timer = FrequencyTimer(VR_FREQ)
 
         self.use_filter = use_filter
         if use_filter:
             robot_init_cart = self._homo2cart(self.robot_init_H)
             self.comp_filter = Filter(robot_init_cart, comp_ratio=0.8)
 
-        self._timer = FrequencyTimer(VR_FREQ)
+        
 
     @property
     def timer(self):
@@ -101,6 +104,7 @@ class FrankaArmOperator(Operator):
 
     # Get the hand frame
     def _get_hand_frame(self):
+        # 接收手部帧数据
         for i in range(10):
             data = self.transformed_arm_keypoint_subscriber.recv_keypoints(flags=zmq.NOBLOCK)
             if not data is None: break 
@@ -109,6 +113,7 @@ class FrankaArmOperator(Operator):
     
     # Get the resolution scale mode (High or Low)
     def _get_resolution_scale_mode(self):
+        # 获取分辨率缩放
         data = self._arm_resolution_subscriber.recv_keypoints()
         res_scale = np.asanyarray(data).reshape(1)[0] # Make sure this data is one dimensional
         return res_scale  
@@ -141,7 +146,6 @@ class FrankaArmOperator(Operator):
         cart = np.concatenate(
             [t, R], axis=0
         )
-
         return cart
     
     # Gets the Scaled Resolution pose
@@ -167,11 +171,14 @@ class FrankaArmOperator(Operator):
     # Reset the teleoperation and get the first frame
     def _reset_teleop(self):
         # Just updates the beginning position of the arm
+        # 重置遥操作的初始参考坐标系
         print('****** RESETTING TELEOP ****** ')
         self.robot_init_H = self.robot.get_pose()['position']
+
         first_hand_frame = self._get_hand_frame()
-        while first_hand_frame is None:
+        while first_hand_frame is None:  # 确保重置时具有有效的手部参考系
             first_hand_frame = self._get_hand_frame()
+
         self.hand_init_H = self._turn_frame_to_homo_mat(first_hand_frame)
         self.hand_init_t = copy(self.hand_init_H[:3, 3])
         self.is_first_frame = False
@@ -179,17 +186,27 @@ class FrankaArmOperator(Operator):
 
     # Apply the retargeted angles
     def _apply_retargeted_angles(self, log=False):
-
+        """
+            核心控制方法，实现：
+                检查遥操作状态，必要时重置
+                获取当前手部坐标系
+                计算手部运动到机械臂运动的映射
+                应用分辨率缩放
+                可选地使用滤波器平滑运动
+                发送控制指令到机械臂
+        """
         # See if there is a reset in the teleop
         new_arm_teleop_state = self._get_arm_teleop_state()
+        # 判断是否需要重置
         if self.is_first_frame or (self.arm_teleop_state == ARM_TELEOP_STOP and new_arm_teleop_state == ARM_TELEOP_CONT):
             moving_hand_frame = self._reset_teleop() # Should get the moving hand frame only once
         else:
             moving_hand_frame = self._get_hand_frame() # Should get the hand frame 
         self.arm_teleop_state = new_arm_teleop_state 
 
-        # Get the arm resolution
+        # 获取分辨率模式
         arm_teleoperation_scale_mode = self._get_resolution_scale_mode()
+        # 设置分辨率缩放因子
         if arm_teleoperation_scale_mode == ARM_HIGH_RESOLUTION:
             self.resolution_scale = 1
         elif arm_teleoperation_scale_mode == ARM_LOW_RESOLUTION:
@@ -198,27 +215,33 @@ class FrankaArmOperator(Operator):
         if moving_hand_frame is None: 
             return # It means we are not on the arm mode yet instead of blocking it is directly returning
         
-        # Get the moving hand frame
+        # Get the moving hand frame  # 将手部帧转换为齐次变换矩阵
         self.hand_moving_H = self._turn_frame_to_homo_mat(moving_hand_frame)
 
         # Transformation code
+        # 初始手部→当前手部
         H_HI_HH = copy(self.hand_init_H) # Homo matrix that takes P_HI  to P_HH - Point in Inital Hand Frame to Point in current hand Frame
+        # 目标手部→当前手部
         H_HT_HH = copy(self.hand_moving_H) # Homo matrix that takes P_HT to P_HH
+        # 初始机械臂→当前机械臂
         H_RI_RH = copy(self.robot_init_H) # Homo matrix that takes P_RI to P_RH
 
         # Rotation from allegro to franka
+        # Allegro手到Franka臂的固定变换
         H_A_R = np.array( 
             [[1/np.sqrt(2), 1/np.sqrt(2), 0, 0],
              [-1/np.sqrt(2), 1/np.sqrt(2), 0, 0],
              [0, 0, 1, -0.06], # The height of the allegro mount is 6cm
              [0, 0, 0, 1]])  
 
+        # 计算手部相对初始的运动
         H_HT_HI = np.linalg.pinv(H_HI_HH) @ H_HT_HH # Homo matrix that takes P_HT to P_HI
+        # 映射到机械臂
         H_RT_RH = H_RI_RH @ H_A_R @ H_HT_HI @ np.linalg.pinv(H_A_R) # Homo matrix that takes P_RT to P_RH
         self.robot_moving_H = copy(H_RT_RH)
 
         # Use the resolution scale to get the final cart pose
-        final_pose = self._get_scaled_cart_pose(self.robot_moving_H)
+        final_pose = self._get_scaled_cart_pose(self.robot_moving_H)  # 只缩放平移部分，不改变旋转
         # Use a Filter
         if self.use_filter:
             final_pose = self.comp_filter(final_pose)

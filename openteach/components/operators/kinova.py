@@ -41,15 +41,18 @@ class KinovaArmOperator(Operator):
         teleoperation_reset_port = None,
     ):
         self.notify_component_start('kinova arm operator')
-        self._transformed_arm_keypoint_subscriber = ZMQKeypointSubscriber(
-            host=host,
-            port=transformed_keypoints_port,
-            topic='transformed_hand_frame'
-        )
+        # Subscribers for the transformed hand keypoints
+        # zwq订阅
         self._transformed_hand_keypoint_subscriber = ZMQKeypointSubscriber(
             host=host,
             port=transformed_keypoints_port,
             topic='transformed_hand_coords'
+        )
+        # Subscribers for the transformed arm frame
+        self._transformed_arm_keypoint_subscriber = ZMQKeypointSubscriber(
+            host=host,
+            port=transformed_keypoints_port,
+            topic='transformed_hand_frame'
         )
 
         # Initalizing the robot controller
