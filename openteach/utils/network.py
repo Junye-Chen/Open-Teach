@@ -40,6 +40,7 @@ class ZMQKeypointPublisher(object):
 
     def _init_publisher(self):
         self.context = zmq.Context()
+        # 发布数据到VR设备
         self.socket = self.context.socket(zmq.PUB)
         self.socket.bind('tcp://{}:{}'.format(self._host, self._port))
 
@@ -65,6 +66,7 @@ class ZMQKeypointSubscriber(threading.Thread):
 
     def _init_subscriber(self):
         self.context = zmq.Context()
+        # 订阅VR设备发送的数据
         self.socket = self.context.socket(zmq.SUB)
         self.socket.setsockopt(zmq.CONFLATE, 1)
         self.socket.connect('tcp://{}:{}'.format(self._host, self._port))
