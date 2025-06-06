@@ -167,7 +167,7 @@ class DexArmControl():
         return joint_state
     
     def get_arm_pose(self):
-        pose = copy(self.franka.get_pose())
+        pose = copy(self.franka.get_pose()) # Returns a 4*4 numpy array
 
         pose_state = dict(
             position = np.array(pose, dtype=np.float32),

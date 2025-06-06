@@ -13,7 +13,7 @@ class DexArmControl():
         #         rospy.init_node("dex_arm", disable_signals = True, anonymous = True)
         # except:
         #         pass
-        
+        self.factor = 1000
         if robot_type == 'both':
             self._init_allegro_hand_control()
             self._init_robot_control(record_type)
@@ -23,11 +23,15 @@ class DexArmControl():
             self._init_robot_control(record_type)
 
     # Controller initializers
-    def _init_robot_control(self):
+    def _init_robot_control(self, record_type=False):
         self.piper = C_PiperInterface_V2("can0")
         self.piper.ConnectPort()
         self.piper.EnableArm(7)
         self._enable_fun(piper=self.piper)
+        self.home_arm()
+        if record_type:
+            self.piper.StartRecord()
+
 
     def _enable_fun(self, piper:C_PiperInterface_V2):        
         '''
@@ -65,9 +69,23 @@ class DexArmControl():
             exit(0)
 
     def _init_allegro_hand_control(self):
+        # for dexhand
+        self.allegro_joint_state = None
         pass
 
-    # State information function
+    def get_hand_state(self):
+        if self.allegro_joint_state is None:
+            return None
+
+        # raw_joint_state = copy(self.allegro_joint_state)
+
+        # joint_state = dict(
+        #     position = np.array(raw_joint_state.position, dtype = np.float32),
+        #     velocity = np.array(raw_joint_state.velocity, dtype = np.float32),
+        #     effort = np.array(raw_joint_state.effort, dtype = np.float32),
+        #     timestamp = raw_joint_state.header.stamp.secs + (raw_joint_state.header.stamp.nsecs * 1e-9)
+        # )
+        # return joint_state
 
 
     # Commanded joint state is the joint state being sent as an input to the controller
@@ -121,14 +139,18 @@ class DexArmControl():
         return cartesian_coord
     
     def get_arm_pose(self):
+        pose = np.zeros([4,4])
         msg = self.piper.GetArmEndPoseMsgs()
         current_pos = np.array([msg.end_pose.X_axis, msg.end_pose.Y_axis, msg.end_pose.Z_axis], dtype=np.float32)
         euler_angles = np.array([msg.end_pose.RX_axis,msg.end_pose.RY_axis,msg.end_pose.RZ_axis], dtype=np.float32)
         euler_angles = np.radians(euler_angles)
-        current_quat = tfs.euler.euler2quat(euler_angles[0], euler_angles[1], euler_angles[2], 'sxyz')
+        rot_mat = tfs.euler.euler2mat(euler_angles[0], euler_angles[1], euler_angles[2], 'sxyz')
+        pose[:3, :3] = rot_mat
+        pose[:3, 3] = current_pos
+        pose[3, 3] = 1
 
         pose_state = dict(
-            position = np.array(np.concatenate([current_pos, current_quat]), dtype=np.float32),
+            position = np.array(pose, dtype=np.float32),
             timestamp = time.time()
         )
 
@@ -230,8 +252,10 @@ class DexArmControl():
         pass
 
     def arm_control(self, arm_pose):
-        current_status = arm_pose
-
+        pose_quat = arm_pose[3:]
+        pose_angle = tfs.quaternions.quat2axangle(pose_quat)
+        current_status = np.concatenate([arm_pose[:3], pose_angle], axis=0)
+        
         X = round(current_status[0])
         Y = round(current_status[1])
         Z = round(current_status[2])
@@ -249,5 +273,13 @@ class DexArmControl():
 
 
 if __name__ == "__main__":
-    dexter = DexArmControl()
-    dexter.home_robot()
+    # dexter = DexArmControl()
+    # dexter.home_robot()
+    pose = np.zeros([4,4])
+    a = np.radians(45)
+    current_quat = tfs.euler.euler2mat(a, 0, 0, 'sxyz')
+
+    # print(pose)
+    # print(pose.shape)
+    print(current_quat)
+    print(current_quat.shape)
