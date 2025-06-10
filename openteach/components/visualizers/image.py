@@ -21,7 +21,7 @@ class RobotImageVisualizer(Component):
                 self.timer.start_loop()
 
                 image, _ = self.subscriber.recv_rgb_image()
-                rescaled_image = rescale_image(image, VISUAL_RESCALE_FACTOR)
+                rescaled_image = rescale_image(image, rescale_factor=VISUAL_RESCALE_FACTOR)
                 cv2.imshow('Robot camera {} - RGB stream'.format(self.camera_number), rescaled_image)
                 cv2.waitKey(1)
 

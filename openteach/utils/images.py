@@ -1,11 +1,10 @@
 import cv2
 import numpy as np
 
-def rescale_image(image, rescale_factor):
-    width, height = int(image.shape[1] / rescale_factor), int(image.shape[0] / rescale_factor)
-    return cv2.resize(image, (width, height), interpolation = cv2.INTER_AREA)
-
-def rescale_image(image, width, height):
+def rescale_image(image, width=None, height=None, rescale_factor=None):
+    if rescale_factor is not None:
+        width = int(image.shape[1] / rescale_factor)
+        height = int(image.shape[0] / rescale_factor)
     return cv2.resize(image, (width, height), interpolation = cv2.INTER_AREA)
 
 def stack_images(image_array):

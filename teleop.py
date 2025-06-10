@@ -15,10 +15,19 @@ def main(configs):
 if __name__ == '__main__':
     main()
 
-    """
-    # 启动服务器
-    python deploy_server.py
-    
-    # 运行远程操作
-    python teleop.py robot=piper
-    """
+"""
+连接机器人：
+cd workspace/piper_sdk/
+bash can_activate.sh can0 1000000
+
+
+
+"""
+
+"""
+# 启动服务器
+python deploy_server.py
+
+# 运行远程操作
+python teleop.py robot=piper
+"""

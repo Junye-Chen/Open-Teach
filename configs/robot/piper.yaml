@@ -34,7 +34,7 @@ visualizers:
     _target_: openteach.components.visualizers.image.RobotImageVisualizer
     host: ${host_address}
     cam_port_offset: ${cam_port_offset}
-    cam_idx: 0  # 使用第一个摄像头
+    cam_id: 1  # 使用第一个摄像头
 
 # Operators used to retarget the keypoints
 operators:
@@ -51,7 +51,20 @@ controllers:
   -
     _target_: openteach.robot.piper.PiperArm
 
-
+# 添加 GeminiCameras 配置
+sensors:
+  -
+    _target_: openteach.components.sensors.gemini.GeminiCamera
+    stream_configs:
+      host: ${host_address}
+      port: ${cam_port_offset}
+    cam_serial_num: "145645318"  # 替换为您的相机序列号
+    cam_id: 0
+    cam_configs:
+      rotation_angle: 0
+      width: 640
+      height: 360
+    stream_oculus: true
 
 # Information to be recorded by the robot 
 recorded_data:

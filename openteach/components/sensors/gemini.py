@@ -176,7 +176,7 @@ class GeminiCamera(Component):
 
                 # covert to RGB format
                 color_image = frame_to_bgr_image(color_frame)
-                color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)
+                # color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)
                 if color_image is None:
                     print("failed to convert frame to image")
                     continue
