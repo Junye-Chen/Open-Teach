@@ -28,3 +28,6 @@ urdf/*
 
 # Logs
 logs/*
+
+# assets
+calibration_files
