@@ -4,20 +4,26 @@ defaults:
   - override hydra/hydra_logging: disabled  
   - override hydra/job_logging: disabled 
 
-robot_cam_serial_numbers:
-  - '141722071999' # close to the robot
-  - '138422075648' # on top left corner
-  - '023422073116'
-
+# 自定义摄像头配置
 cam_configs:
-  width: 1280
-  height: 720
-  fps: 30
-  processing_preset: 1 # High accuracy mode
-  rotation_angle: 0
+  width: 640  # 摄像头分辨率宽度
+  height: 480  # 摄像头分辨率高度
+  fps: 30      # 帧率
+  processing_preset: 1  # 处理模式：1=高精度
+  rotation_angle: 0     # 旋转角度
 
-oculus_cam: 0 # First camera
-num_cams: 1
+# 摄像头选择
+oculus_cam: 0  # 使用第一个摄像头
+num_cams: 1    # 使用的摄像头数量
+
+# 摄像头设备ID（根据您的摄像头修改）
+robot_cam_serial_numbers:
+  - 'YOUR_CAMERA_ID'  # 替换为您的摄像头ID
+
+# robot_cam_serial_numbers:
+#   - '141722071999' # close to the robot
+#   - '138422075648' # on top left corner
+#   - '023422073116'
 
 hydra:  
   output_subdir: null  

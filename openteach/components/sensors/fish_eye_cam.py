@@ -11,7 +11,7 @@ import time
 import multiprocessing as mp
 
 class FishEyeCamera(Component):
-    def __init__(self,cam_index,stream_configs, stream_oculus = False):
+    def __init__(self,cam_index, stream_configs, stream_oculus = False):
         # Disabling scientific notations
         np.set_printoptions(suppress=True)
         self.cam_id = cam_index
@@ -61,6 +61,7 @@ class FishEyeCamera(Component):
             ret, frame = self.cap.read()
         timestamp = time.time()
         return frame, timestamp
+    
     def stream(self):
         # Starting the fisheye stream
         self.notify_component_start('FishEye')
@@ -73,7 +74,7 @@ class FishEyeCamera(Component):
         while True:
             try:
                 self.timer.start_loop()
-                color_image,timestamp = self.get_rgb_depth_images()
+                color_image, timestamp = self.get_rgb_depth_images()
 
                 # Publishing the rgb images
                 self.rgb_publisher.pub_rgb_image(color_image, timestamp)

@@ -127,6 +127,7 @@ class ZMQCameraPublisher(object):
         self.socket.close()
         self.context.term()
 
+# 这个可以不用改，改发布者
 class ZMQCameraSubscriber(threading.Thread):
     def __init__(self, host, port, topic_type):
         self._host, self._port, self._topic_type = host, port, topic_type
@@ -139,12 +140,17 @@ class ZMQCameraSubscriber(threading.Thread):
         print('tcp://{}:{}'.format(self._host, self._port))
         self.socket.connect('tcp://{}:{}'.format(self._host, self._port))
 
+        # 根据我的相机修改了topic
         if self._topic_type == 'Intrinsics':
             self.socket.setsockopt(zmq.SUBSCRIBE, b"intrinsics")
+            # self.socket.setsockopt(zmq.SUBSCRIBE, b"/camera/color/camera_info")
         elif self._topic_type == 'RGB':
             self.socket.setsockopt(zmq.SUBSCRIBE, b"rgb_image")
+            # self.socket.setsockopt(zmq.SUBSCRIBE, b"/camera/color/image_raw")
         elif self._topic_type == 'Depth':
             self.socket.setsockopt(zmq.SUBSCRIBE, b"depth_image")
+            # self.socket.setsockopt(zmq.SUBSCRIBE, b"/camera/depth/image_raw")
+            
 
     def recv_intrinsics(self):
         raw_data = self.socket.recv()
@@ -195,6 +201,7 @@ class ZMQCompressedImageTransmitter(object):
         print('Closing the publisher in {}:{}.'.format(self._host, self._port))
         self.socket.close()
         self.context.term()
+
 
 class ZMQCompressedImageReciever(threading.Thread):
     def __init__(self, host, port):

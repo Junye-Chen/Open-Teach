@@ -34,9 +34,13 @@ class DeployServer(Component):
             self._robots[robot.name] = robot
 
     def _init_sensor_subscribers(self):
-        xela_controllers = hydra.utils.instantiate(self.configs.robot.xela_controllers)
         self._sensors = dict()
-        self._sensors['xela'] = xela_controllers[0] # There is only 1 controller
+        if hasattr(self.configs.robot, 'xela_controllers'):
+            xela_controllers = hydra.utils.instantiate(self.configs.robot.xela_controllers)
+            if xela_controllers:
+                self._sensors['xela'] = xela_controllers[0]  # There is only 1 controller
+        else:
+            print("Warning: No xela_controllers configuration found. Running without Xela sensors.")
 
     def _perform_robot_action(self, robot_action_dict):
         try:

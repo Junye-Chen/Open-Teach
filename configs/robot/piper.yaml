@@ -29,6 +29,13 @@ visualizers:
     oculus_feedback_port: ${oculus_graph_port}
     display_plot: ${visualize_right_2d}
 
+# 相机
+  - 
+    _target_: openteach.components.visualizers.image.RobotImageVisualizer
+    host: ${host_address}
+    cam_port_offset: ${cam_port_offset}
+    cam_idx: 0  # 使用第一个摄像头
+
 # Operators used to retarget the keypoints
 operators:
   - 
@@ -43,7 +50,7 @@ operators:
 controllers:
   -
     _target_: openteach.robot.piper.PiperArm
-    record: False
+
 
 
 # Information to be recorded by the robot 

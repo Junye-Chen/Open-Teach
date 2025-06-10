@@ -14,3 +14,11 @@ def main(configs):
 
 if __name__ == '__main__':
     main()
+
+    """
+    # 启动服务器
+    python deploy_server.py
+    
+    # 运行远程操作
+    python teleop.py robot=piper
+    """

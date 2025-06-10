@@ -1,4 +1,5 @@
-host_address: '172.24.71.206'
+# host_address: '192.168.0.23'
+host_address: '192.168.1.119'  # 这个IP是对的，需要电脑和头显同时连接相同的wifi
 left_xarm_ip: '192.168.86.216'
 right_xarm_ip: '192.168.86.230'
 
@@ -11,7 +12,7 @@ transformed_position_left_keypoint_port: 8099
 transformed_velocity_keypoint_port: 8090
 
 # Camera offsets
-cam_port_offset:  10005
+cam_port_offset: 10005
 
 # Graph stream
 oculus_graph_port: 15001
