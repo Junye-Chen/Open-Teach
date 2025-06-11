@@ -15,6 +15,7 @@ class PlotHand2D(Plotter):
         # Display plot
         if not display_plot:
             matplotlib.use('Agg')
+            plt.ioff()  # 关闭交互模式
 
         # Thumb bound info
         self.display_plot = display_plot
@@ -87,6 +88,7 @@ class PlotHand2D(Plotter):
         plot = cv2.imread(VR_2D_PLOT_SAVE_PATH)
         self.socket.send_image(plot)
 
-        # Resetting and pausing the 3D plot
-        plt.pause(0.001) # This make the graph show up if matplotlib is in Tkinter mode
+        # 只在交互模式下暂停
+        if self.display_plot:
+            plt.pause(0.001)
         plt.cla()
