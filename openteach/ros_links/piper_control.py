@@ -27,8 +27,18 @@ class DexArmControl():
         self.piper = C_PiperInterface_V2("can0")
         self.piper.ConnectPort()
         self.piper.EnableArm(7)
+
         self._enable_fun(piper=self.piper)
         self.home_arm()
+
+        # 设置电机角度限制及最大速度
+        self.piper.MotorAngleLimitMaxSpdSet(1, -150, -150, 2000)
+        self.piper.MotorAngleLimitMaxSpdSet(2, 0, 180, 2000)
+        self.piper.MotorAngleLimitMaxSpdSet(3, -170, 0, 2000)
+        self.piper.MotorAngleLimitMaxSpdSet(4, -100, 100, 2000)
+        self.piper.MotorAngleLimitMaxSpdSet(5, -70, 70, 2000)
+        self.piper.MotorAngleLimitMaxSpdSet(6, -120, 120, 2000)
+
         if record_type:
             self.piper.StartRecord()
 
@@ -146,7 +156,7 @@ class DexArmControl():
         euler_angles = np.radians(euler_angles)
         rot_mat = tfs.euler.euler2mat(euler_angles[0], euler_angles[1], euler_angles[2], 'sxyz')
         pose[:3, :3] = rot_mat
-        pose[:3, 3] = current_pos
+        pose[:3, 3] = current_pos / self.factor  # 单位是mm
         pose[3, 3] = 1
 
         pose_state = dict(
@@ -253,17 +263,44 @@ class DexArmControl():
 
     def arm_control(self, arm_pose):
         pose_quat = arm_pose[3:]
-        pose_angle = tfs.quaternions.quat2axangle(pose_quat)
+        # print(pose_angle)
+        pose_mat = tfs.quaternions.quat2mat(pose_quat)
+        pose_angle = tfs.euler.mat2euler(pose_mat)
+        pose_angle = np.degrees(pose_angle)
+        # print('pose_angle', pose_angle)        
         current_status = np.concatenate([arm_pose[:3], pose_angle], axis=0)
+        # print('arm_pose', arm_pose[:3])
+
+        arm_status = self.get_arm_osc_position()
+        # print('  arm_status  ', arm_status/self.factor)
+
+        # print(self.piper.GetCurrentMotorAngleLimitMaxVel())
+
+        # offsets
+        # current_status[3] = (current_status[3] + 180)  # offset for x axis angle
+        # current_status[5] = (current_status[5] + 180)  # offset for z axis angle
+
+        # current_status = [95.0, 0.0, 260.0, 0, 85.0, 0, 80]
+        # print('current_status', current_status)
         
-        X = round(current_status[0])
-        Y = round(current_status[1])
-        Z = round(current_status[2])
-        RX = round(current_status[3])
-        RY = round(current_status[4])
-        RZ = round(current_status[5])
+        X = round(current_status[0]*self.factor)
+        Y = round(current_status[1]*self.factor)
+        Z = round(current_status[2]*self.factor)
+        RX = round(current_status[3]*self.factor)
+        RY = round(current_status[4]*self.factor)
+        RZ = round(current_status[5]*self.factor)
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
         self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
+        # print('move arm to test point.')
+
+    def set_gripper_state(self, gripper_state, gripper_degree):
+        scale = 1.
+        if not gripper_state:
+            return
+        ctrl_degree = min(100*self.factor, gripper_degree * scale * self.factor)
+        self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
+        self.piper.GripperCtrl(ctrl_degree, 1000, 0x01, 0)
+
 
     #Home the Robot
     def home_robot(self):

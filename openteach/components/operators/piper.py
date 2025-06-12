@@ -4,7 +4,7 @@ import zmq
 
 from mpl_toolkits.mplot3d import Axes3D
 from tqdm import tqdm
-
+import time
 from copy import deepcopy as copy
 from asyncio import threads
 from openteach.constants import *
@@ -19,6 +19,7 @@ from .operator import Operator
 from scipy.spatial.transform import Rotation as R
 from numpy.linalg import pinv
 
+# from plot import draw_3d_curve, plot_realtime_coordinates
 
 
 np.set_printoptions(precision=2, suppress=True)
@@ -115,14 +116,18 @@ class PiperArmOperator(Operator):
             self.comp_filter = Filter(robot_init_cart, comp_ratio=0.8)
             
         # Class variables
-        # self.gripper_flag=1
-        # self.pause_flag=1
-        # self.prev_pause_flag=0        
-        # self.gripper_cnt=0
-        # self.prev_gripper_flag=0
-        # self.pause_cnt=0
-        # self.gripper_correct_state=1
+        self.gripper_flag = 1
+        self.pause_flag = 1
+        self.prev_pause_flag = 0        
+        self.gripper_cnt = 0
+        self.prev_gripper_flag = 0
+        self.pause_cnt = 0
+        self.gripper_correct_state = 1
         self.factor = 1000
+
+        self.his_state = None
+        self.MAX_DIS = 10.
+        self.MAX_ANGLE = 30.
 
 
     @property
@@ -168,7 +173,14 @@ class PiperArmOperator(Operator):
                 break 
         if data is None:
             return None
-        return np.asanyarray(data).reshape(4, 3)
+        return np.asanyarray(data).reshape(4, 3)  # [t:R]
+    """
+    moving_hand_frame
+    [[ 0.3   1.06  0.2 ]  # t
+    [-0.81  0.49 -0.33]
+    [ 0.59  0.73 -0.35]   # R
+    [-0.24  0.56  0.79]]
+    """
     
     # Get the resolution scale mode (High or Low)
     def _get_resolution_scale_mode(self):
@@ -185,7 +197,7 @@ class PiperArmOperator(Operator):
 
     # Converts a frame to a homogenous transformation matrix
     def _turn_frame_to_homo_mat(self, frame):
-        t = frame[0]
+        t = frame[0] * self.factor  # 单位是mm
         R = frame[1:]
 
         homo_mat = np.zeros((4, 4))
@@ -215,6 +227,7 @@ class PiperArmOperator(Operator):
         # Get the current cart pose
         current_homo_mat = copy(self.robot.get_pose()['position'])
         current_cart_pose = self._homo2cart(current_homo_mat)
+        # print('CURRENT_CART_POSE: {}'.format(current_cart_pose))
 
         # Get the difference in translation between these two cart poses
         diff_in_translation = unscaled_cart_pose[:3] - current_cart_pose[:3]
@@ -238,47 +251,72 @@ class PiperArmOperator(Operator):
         self.hand_init_H = self._turn_frame_to_homo_mat(first_hand_frame)
         self.hand_init_t = copy(self.hand_init_H[:3, 3])
         self.is_first_frame = False
+        print('****** TELEOP RESETTED ***** ')
         return first_hand_frame
 
-    # # Function to get gripper state from hand keypoints
-    # def get_gripper_state_from_hand_keypoints(self):
-    #     transformed_hand_coords= self._transformed_hand_keypoint_subscriber.recv_keypoints()
-    #     distance = np.linalg.norm(transformed_hand_coords[OCULUS_JOINTS['pinky'][-1]]- transformed_hand_coords[OCULUS_JOINTS['thumb'][-1]])
-    #     thresh = 0.03
-    #     gripper_fl =False
-    #     if distance < thresh:
-    #         self.gripper_cnt+=1
-    #         if self.gripper_cnt==1:
-    #             self.prev_gripper_flag = self.gripper_flag
-    #             self.gripper_flag = not self.gripper_flag 
-    #             gripper_fl=True
-    #     else: 
-    #         self.gripper_cnt=0
-    #     gripper_state = np.asanyarray(self.gripper_flag).reshape(1)[0]
-    #     status= False  
-    #     if gripper_state!= self.prev_gripper_flag:
-    #         status= True
-    #     return gripper_state , status , gripper_fl 
-   
-    # # Toggle the robot to pause/resume using ring/middle finger pinch, both finger modes are supported to avoid any hand pose noise issue
-    # def get_pause_state_from_hand_keypoints(self):
-    #     transformed_hand_coords= self._transformed_hand_keypoint_subscriber.recv_keypoints()
-    #     ring_distance = np.linalg.norm(transformed_hand_coords[OCULUS_JOINTS['ring'][-1]]- transformed_hand_coords[OCULUS_JOINTS['thumb'][-1]])
-    #     middle_distance = np.linalg.norm(transformed_hand_coords[OCULUS_JOINTS['middle'][-1]]- transformed_hand_coords[OCULUS_JOINTS['thumb'][-1]])
-    #     thresh = 0.03 
-    #     pause_right= True
-    #     if ring_distance < thresh  or middle_distance < thresh:
-    #         self.pause_cnt+=1
-    #         if self.pause_cnt==1:
-    #             self.prev_pause_flag=self.pause_flag
-    #             self.pause_flag = not self.pause_flag       
-    #     else:
-    #         self.pause_cnt=0
-    #     pause_state = np.asanyarray(self.pause_flag).reshape(1)[0]
-    #     pause_status= False  
-    #     if pause_state!= self.prev_pause_flag:
-    #         pause_status= True 
-    #     return pause_state , pause_status , pause_right
+    # Function to get gripper state from hand keypoints
+    def get_gripper_state_from_hand_keypoints(self):
+        # 获取手部关键点坐标
+        transformed_hand_coords = self._transformed_hand_keypoint_subscriber.recv_keypoints()
+        
+        # 计算食指指尖和拇指指尖之间的距离
+        distance = np.linalg.norm(transformed_hand_coords[OCULUS_JOINTS['index'][-1]] - 
+                                transformed_hand_coords[OCULUS_JOINTS['thumb'][-1]])
+        
+        thresh = 0.03  # 距离阈值：3cm
+        gripper_fl = False
+        gripper_degree = None
+        
+        # 判断是否触发抓取器状态切换
+        if distance < thresh:  # 如果距离小于阈值
+            self.gripper_cnt += 1
+            if self.gripper_cnt == 1:  # 只在第一次检测到时切换状态
+                self.prev_gripper_flag = self.gripper_flag  # 保存前一个状态
+                self.gripper_flag = not self.gripper_flag   # 切换状态
+                gripper_fl = True
+                gripper_degree = distance * self.factor  # 转换单位到mm
+        else: 
+            self.gripper_cnt = 0  # 重置计数器
+        
+        # 获取当前抓取器状态
+        gripper_state = np.asanyarray(self.gripper_flag).reshape(1)[0]
+        
+        # 判断状态是否发生变化
+        status = False
+        if gripper_state != self.prev_gripper_flag:
+            status = True
+        
+        return gripper_state, status, gripper_fl, gripper_degree
+    
+    # 去掉剧烈变化的帧
+    def filter_sharp_motion(self, next_state):  
+        MAX_DIS = self.MAX_DIS
+        MAX_ANGLE = self.MAX_ANGLE
+
+        if self.his_state is None:
+            self.his_state = copy(self.robot.get_pose()['position'])
+
+        try:
+            H_relative = np.linalg.inv(self.his_state) @ next_state
+            R_rel = H_relative[:3, :3]
+            t_rel = H_relative[:3, 3]
+            
+            trace_val = np.trace(R_rel)
+            arg_for_acos = np.clip((trace_val - 1.0) / 2.0, -1.0, 1.0)
+            angle_rad = np.arccos(arg_for_acos)
+            angle_deg = np.rad2deg(angle_rad)
+
+            if np.linalg.norm(t_rel) > MAX_DIS or angle_deg > MAX_ANGLE:
+                return self.his_state
+            else:
+                self.his_state = next_state
+                return next_state
+            
+        except np.linalg.LinAlgError:
+            # 如果矩阵求逆失败，也认为是不安全的
+            print("矩阵求逆失败，姿态可能无效。")
+            return self.his_state
+        
 
     # Function to apply retargeted angles
     def _apply_retargeted_angles(self, log=False):
@@ -294,23 +332,29 @@ class PiperArmOperator(Operator):
         # See if there is a reset in the teleop
         new_arm_teleop_state = self._get_arm_teleop_state()
         # 判断是否需要重置
+        # print(self.is_first_frame, self.arm_teleop_state, new_arm_teleop_state)
         if self.is_first_frame or (self.arm_teleop_state == ARM_TELEOP_STOP and new_arm_teleop_state == ARM_TELEOP_CONT):
             moving_hand_frame = self._reset_teleop() # Should get the moving hand frame only once
         else:
             moving_hand_frame = self._get_hand_frame()
         self.arm_teleop_state = new_arm_teleop_state
         arm_teleoperation_scale_mode = self._get_resolution_scale_mode()
+        # print('arm_teleoperation_scale_mode', arm_teleoperation_scale_mode)
 
+        # 设置操作分辨率
         if arm_teleoperation_scale_mode == ARM_HIGH_RESOLUTION:
             self.resolution_scale = 1
         elif arm_teleoperation_scale_mode == ARM_LOW_RESOLUTION:
             self.resolution_scale = 0.6
 
+        # self.resolution_scale = 0.5  # !!!!!!!!!!精细操作!!!!!!!!!!!!
+
         if moving_hand_frame is None: 
             return # It means we are not on the arm mode yet instead of blocking it is directly returning
-        
+        # print('moving_hand_frame\n', moving_hand_frame)
         # Get the moving hand frame  # 将手部帧转换为齐次变换矩阵
         self.hand_moving_H = self._turn_frame_to_homo_mat(moving_hand_frame)
+        # print('hand_moving_H\n', self.hand_moving_H)
 
         # Transformation code
         # 初始手部→当前手部
@@ -319,6 +363,10 @@ class PiperArmOperator(Operator):
         H_HT_HH = copy(self.hand_moving_H) # Homo matrix that takes P_HT to P_HH
         # 初始机械臂→当前机械臂
         H_RI_RH = copy(self.robot_init_H) # Homo matrix that takes P_RI to P_RH
+        # print('hand_init_H\n', self.hand_init_H)
+        # print('hand_moving_H\n', self.hand_moving_H)
+        # print('H_RI_RH\n', self.robot_init_H)
+
 
         # Rotation from allegro to franka
         # 夹抓到Piper臂的固定变换
@@ -327,10 +375,28 @@ class PiperArmOperator(Operator):
                           [0, 0, 1, 0], # The height of the allegro mount is 6cm
                           [0, 0, 0, 1]])  
 
-        # 计算手部相对初始的运动
+        # 计算当前手部相对初始位姿的位姿
         H_HT_HI = np.linalg.pinv(H_HI_HH) @ H_HT_HH # Homo matrix that takes P_HT to P_HI
+        # print('H_HT_HI\n', H_HT_HI)
+        # print('H_HT_HI\n', H_HT_HI[:3, 3])
+        # 在项目目录下打开一个move.txt文件，记录一千条H_HT_HI[:3, 3]的数据，可视化
+        # with open('move.txt', 'a') as f:
+        #     f.write(str(H_HT_HH[:3, 3])+'\n')
+
+        # VR和机械臂的坐标系转换
+        R_vr2robot = np.array([[0, 0, 1, 0], [-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) 
+        H_HT_HI = R_vr2robot @ H_HT_HI @ np.linalg.inv(R_vr2robot)
+
+        # print('H_HT_HI after trans.\n', H_HT_HI)
+        # print('H_HT_HI after trans. \n', H_HT_HI[:3, 3])
+        # with open('move.txt', 'a') as f:
+        #     f.write(str(H_HT_HI[:3, 3])+'\n')
+
         # 映射到机械臂
-        H_RT_RH = H_RI_RH @ H_A_R @ H_HT_HI @ np.linalg.pinv(H_A_R) # Homo matrix that takes P_RT to P_RH
+        # H_RT_RH = H_RI_RH @ H_A_R @ H_HT_HI @ np.linalg.pinv(H_A_R) # Homo matrix that takes P_RT to P_RH
+        H_RT_RH = H_RI_RH @ H_HT_HI  # 相对于末端坐标系的移动，这里的单位是mm，坐标位置而不是控制信号
+        # H_RT_RH = H_HT_HI @ H_RI_RH  # 相对于基座坐标系的移动，这里的单位是mm，坐标位置而不是控制信号
+        # print('H_RT_RH\n', H_RT_RH)
 
         # 可以根据需要设置旋转和平移矩阵
         # # This matrix will change accordingly on how you want the rotations to be.
@@ -358,19 +424,24 @@ class PiperArmOperator(Operator):
 
         self.robot_moving_H = copy(H_RT_RH)
 
+        # 避免剧烈运动，需要对计算的位姿去掉剧变的点
+        self.robot_moving_H = self.filter_sharp_motion(self.robot_moving_H)
+
         # Use the resolution scale to get the final cart pose
         final_pose = self._get_scaled_cart_pose(self.robot_moving_H)  # (7,) 位置+姿态四元数
         # final_pose[0:3]=final_pose[0:3]*self.factor  # 是否需要？
+        # print('final_pose', final_pose)
 
+        
         # Apply the filter
         if self.use_filter:
             final_pose = self.comp_filter(final_pose)
 
-        # # 更新抓取器状态
-        # gripper_state, status_change, gripper_flag =self.get_gripper_state_from_hand_keypoints()
-        # if gripper_flag ==1 and status_change is True:
-        #     self.gripper_correct_state=gripper_state
-        #     self.robot.set_gripper_state(self.gripper_correct_state*800)
+        # 更新抓取器状态
+        gripper_state, status_change, gripper_flag, gripper_degree = self.get_gripper_state_from_hand_keypoints()
+        if gripper_flag and status_change:
+            # self.gripper_correct_state=gripper_state
+            self.robot.set_gripper_state(gripper_state, gripper_degree)
         
         # # We save the states here during teleoperation as saving directly at 90Hz seems to be too fast for XArm.
         # # 发布抓取器和机械臂状态信息

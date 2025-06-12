@@ -37,14 +37,17 @@ class PiperArm(RobotWrapper):
     def get_joint_position(self):
         return self._controller.get_arm_position()
     
-    def get_cartesian_position(self):
+    def get_cartesian_position(self):  # [position, Quaternions] (7, )
         return self._controller.get_arm_cartesian_coords()
 
-    def get_osc_position(self):
+    def get_osc_position(self):  # [position, orientation] (6, )
         return self._controller.get_arm_osc_position()
     
-    def get_pose(self):
+    def get_pose(self):  # H = [R|t] (4, 4)
         return self._controller.get_arm_pose()
+    
+    def set_gripper_state(self, gripper_state, gripper_degree):
+        return self._controller.set_gripper_state(gripper_state, gripper_degree)
 
     # Movement functions
     def home(self):
