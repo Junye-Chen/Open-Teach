@@ -43,7 +43,7 @@ operators:
     host: ${host_address}
     transformed_keypoints_port: ${transformed_position_keypoint_port}
     arm_resolution_port: ${resolution_button_publish_port}
-    use_filter: False
+    use_filter: True
     teleoperation_reset_port: ${teleop_reset_publish_port}
 
 # List of controller classes used
