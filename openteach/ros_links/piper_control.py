@@ -32,12 +32,12 @@ class DexArmControl():
         self.home_arm()
 
         # 设置电机角度限制及最大速度
-        self.piper.MotorAngleLimitMaxSpdSet(1, -150, -150, 2000)
-        self.piper.MotorAngleLimitMaxSpdSet(2, 0, 180, 2000)
-        self.piper.MotorAngleLimitMaxSpdSet(3, -170, 0, 2000)
-        self.piper.MotorAngleLimitMaxSpdSet(4, -100, 100, 2000)
-        self.piper.MotorAngleLimitMaxSpdSet(5, -70, 70, 2000)
-        self.piper.MotorAngleLimitMaxSpdSet(6, -120, 120, 2000)
+        # self.piper.MotorAngleLimitMaxSpdSet(1, -150, -150, 2000)
+        # self.piper.MotorAngleLimitMaxSpdSet(2, 0, 180, 2000)
+        # self.piper.MotorAngleLimitMaxSpdSet(3, -170, 0, 2000)
+        # self.piper.MotorAngleLimitMaxSpdSet(4, -100, 100, 2000)
+        # self.piper.MotorAngleLimitMaxSpdSet(5, -70, 70, 2000)
+        # self.piper.MotorAngleLimitMaxSpdSet(6, -120, 120, 2000)
 
         if record_type:
             self.piper.StartRecord()
@@ -241,7 +241,7 @@ class DexArmControl():
 
     # Home Robot
     def home_arm(self):
-        position = [85.0, 0.0, 270.0, 0, 85.0, 0, 80]
+        position = [85.0, 0.0, 280.0, 0, 85.0, 0, 80]
         X = round(position[0]*self.factor)
         Y = round(position[1]*self.factor)
         Z = round(position[2]*self.factor)
@@ -272,13 +272,16 @@ class DexArmControl():
         # print('arm_pose', arm_pose[:3])
 
         arm_status = self.get_arm_osc_position()
+
         # print('  arm_status  ', arm_status/self.factor)
+        # print('current_status', current_status)
 
         # print(self.piper.GetCurrentMotorAngleLimitMaxVel())
 
         # offsets
-        # current_status[3] = (current_status[3] + 180)  # offset for x axis angle
-        # current_status[5] = (current_status[5] + 180)  # offset for z axis angle
+        # current_status[3] = (current_status[3] - 90)  # offset for x axis angle
+        current_status[4] = (current_status[4] + 160)  # offset for y axis angle
+        current_status[5] = (current_status[5] - 80)  # offset for z axis angle
 
         # current_status = [95.0, 0.0, 260.0, 0, 85.0, 0, 80]
         # print('current_status', current_status)
@@ -291,15 +294,18 @@ class DexArmControl():
         RZ = round(current_status[5]*self.factor)
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
         self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
-        # print('move arm to test point.')
+        
 
     def set_gripper_state(self, gripper_state, gripper_degree):
         scale = 1.
-        if not gripper_state:
-            return
-        ctrl_degree = min(100*self.factor, gripper_degree * scale * self.factor)
+        # if not gripper_state:
+        #     return
+        ctrl_degree = min(100*self.factor, max(500, int(gripper_degree * scale * self.factor)))
+        print('ctrl_degree', ctrl_degree)
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
-        self.piper.GripperCtrl(ctrl_degree, 1000, 0x01, 0)
+        self.piper.GripperCtrl(ctrl_degree, 300, 0x01, 0)
+
+        # TODO 改成步进模式控制
 
 
     #Home the Robot

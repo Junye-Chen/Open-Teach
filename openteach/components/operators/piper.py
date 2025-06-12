@@ -113,7 +113,10 @@ class PiperArmOperator(Operator):
         self.use_filter = use_filter
         if use_filter:
             robot_init_cart = self._homo2cart(self.robot_init_H)
-            self.comp_filter = Filter(robot_init_cart, comp_ratio=0.8)
+            self.comp_filter = Filter(robot_init_cart, comp_ratio=0.85)
+
+        # motion outlier detection
+        self.use_filter0 = False
             
         # Class variables
         self.gripper_flag = 1
@@ -254,7 +257,45 @@ class PiperArmOperator(Operator):
         print('****** TELEOP RESETTED ***** ')
         return first_hand_frame
 
-    # Function to get gripper state from hand keypoints
+    # # Function to get gripper state from hand keypoints
+    # def get_gripper_state_from_hand_keypoints(self):
+    #     # 获取手部关键点坐标
+    #     transformed_hand_coords = self._transformed_hand_keypoint_subscriber.recv_keypoints()
+        
+    #     # 计算食指指尖和拇指指尖之间的距离
+    #     distance = np.linalg.norm(transformed_hand_coords[OCULUS_JOINTS['index'][-1]] - 
+    #                             transformed_hand_coords[OCULUS_JOINTS['thumb'][-1]])
+        
+    #     thresh = 0.05  # 距离阈值：3cm
+    #     gripper_fl = False
+    #     gripper_degree = None
+        
+    #     # 判断是否触发抓取器状态切换
+    #     if distance < thresh:  # 如果距离小于阈值
+    #         self.gripper_cnt += 1
+    #         if self.gripper_cnt == 1:  # 只在第一次检测到时切换状态
+    #             self.prev_gripper_flag = self.gripper_flag  # 保存前一个状态
+    #             self.gripper_flag = True   # 设置为夹住状态
+    #             gripper_fl = True
+    #             gripper_degree = distance * self.factor  # 转换单位到mm
+    #     else: 
+    #         if self.gripper_cnt > 0:  # 如果之前处于夹住状态
+    #             self.prev_gripper_flag = self.gripper_flag  # 保存前一个状态
+    #             self.gripper_flag = False   # 设置为放开状态
+    #             gripper_fl = True
+    #             gripper_degree = distance * self.factor  # 转换单位到mm
+    #         self.gripper_cnt = 0  # 重置计数器
+        
+    #     # 获取当前抓取器状态
+    #     gripper_state = np.asanyarray(self.gripper_flag).reshape(1)[0]
+        
+    #     # 判断状态是否发生变化
+    #     status = False
+    #     if gripper_state != self.prev_gripper_flag:
+    #         status = True
+        
+    #     return gripper_state, status, gripper_fl, gripper_degree
+    
     def get_gripper_state_from_hand_keypoints(self):
         # 获取手部关键点坐标
         transformed_hand_coords = self._transformed_hand_keypoint_subscriber.recv_keypoints()
@@ -272,10 +313,15 @@ class PiperArmOperator(Operator):
             self.gripper_cnt += 1
             if self.gripper_cnt == 1:  # 只在第一次检测到时切换状态
                 self.prev_gripper_flag = self.gripper_flag  # 保存前一个状态
-                self.gripper_flag = not self.gripper_flag   # 切换状态
+                self.gripper_flag = True   # 设置为夹住状态
                 gripper_fl = True
                 gripper_degree = distance * self.factor  # 转换单位到mm
         else: 
+            if self.gripper_cnt > 0:  # 如果之前处于夹住状态
+                self.prev_gripper_flag = self.gripper_flag  # 保存前一个状态
+                self.gripper_flag = False   # 设置为放开状态
+                gripper_fl = True
+                gripper_degree = distance * self.factor  # 转换单位到mm
             self.gripper_cnt = 0  # 重置计数器
         
         # 获取当前抓取器状态
@@ -287,7 +333,7 @@ class PiperArmOperator(Operator):
             status = True
         
         return gripper_state, status, gripper_fl, gripper_degree
-    
+
     # 去掉剧烈变化的帧
     def filter_sharp_motion(self, next_state):  
         MAX_DIS = self.MAX_DIS
@@ -347,7 +393,7 @@ class PiperArmOperator(Operator):
         elif arm_teleoperation_scale_mode == ARM_LOW_RESOLUTION:
             self.resolution_scale = 0.6
 
-        # self.resolution_scale = 0.5  # !!!!!!!!!!精细操作!!!!!!!!!!!!
+        self.resolution_scale = 0.5  # !!!!!!!!!!精细操作!!!!!!!!!!!!
 
         if moving_hand_frame is None: 
             return # It means we are not on the arm mode yet instead of blocking it is directly returning
@@ -425,7 +471,8 @@ class PiperArmOperator(Operator):
         self.robot_moving_H = copy(H_RT_RH)
 
         # 避免剧烈运动，需要对计算的位姿去掉剧变的点
-        self.robot_moving_H = self.filter_sharp_motion(self.robot_moving_H)
+        if self.use_filter0:
+            self.robot_moving_H = self.filter_sharp_motion(self.robot_moving_H)
 
         # Use the resolution scale to get the final cart pose
         final_pose = self._get_scaled_cart_pose(self.robot_moving_H)  # (7,) 位置+姿态四元数
@@ -439,9 +486,9 @@ class PiperArmOperator(Operator):
 
         # 更新抓取器状态
         gripper_state, status_change, gripper_flag, gripper_degree = self.get_gripper_state_from_hand_keypoints()
-        if gripper_flag and status_change:
-            # self.gripper_correct_state=gripper_state
-            self.robot.set_gripper_state(gripper_state, gripper_degree)
+        if status_change is True and gripper_flag:
+            self.gripper_correct_state = gripper_state
+            self.robot.set_gripper_state(self.gripper_correct_state, gripper_degree)  # 将浮点数转换为整数
         
         # # We save the states here during teleoperation as saving directly at 90Hz seems to be too fast for XArm.
         # # 发布抓取器和机械臂状态信息
