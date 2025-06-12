@@ -18,8 +18,9 @@ if __name__ == '__main__':
 """
 连接机器人：
 cd workspace/piper_sdk/
-bash can_activate.sh can0 1000000
-
+sudo ethtool -i can0 | grep bus
+bash can_activate.sh can0 1000000 
+bash can_activate.sh can0 1000000 "1-9:1.0"
 
 
 """
