@@ -16,7 +16,6 @@ from openteach.utils.files import *
 from openteach.robot.piper import PiperArm
 from scipy.spatial.transform import Rotation, Slerp
 from .operator import Operator
-from scipy.spatial.transform import Rotation as R
 from numpy.linalg import pinv
 
 # from plot import draw_3d_curve, plot_realtime_coordinates
@@ -110,14 +109,14 @@ class PiperArmOperator(Operator):
         self.is_first_frame = True
         self._timer = FrequencyTimer(VR_FREQ)
 
-        self.use_filter = use_filter
-        if use_filter:
-            robot_init_cart = self._homo2cart(self.robot_init_H)
-            self.comp_filter = Filter(robot_init_cart, comp_ratio=0.85)
-
+        self.use_filter = False
         # motion outlier detection
         self.use_filter0 = False
-            
+
+        if use_filter:
+            robot_init_cart = self._homo2cart(self.robot_init_H)
+            self.comp_filter = Filter(robot_init_cart, comp_ratio=0.65)
+
         # Class variables
         self.gripper_flag = 1
         self.pause_flag = 1
@@ -242,7 +241,28 @@ class PiperArmOperator(Operator):
         scaled_cart_pose[:3] = current_cart_pose[:3] + scaled_diff_in_translation # Get the scaled translation only
 
         return scaled_cart_pose
+    
+    def _get_scaled_euler_pose(self, moving_robot_euler_pose):
+        # 这个直接输入的就是欧拉角形式的动作姿态
+        diff_in_translation = copy(moving_robot_euler_pose[:3])
+        scaled_diff_in_translation = diff_in_translation * self.resolution_scale        
+        moving_robot_euler_pose[:3] = scaled_diff_in_translation # Get the scaled translation only
 
+        return moving_robot_euler_pose
+    
+    # 将输入的4*4位姿矩阵转换成[位置+欧拉角]的形式
+    def _get_aa_pose(self, homo_mat):
+        t = homo_mat[:3, 3]
+        R = Rotation.from_matrix(
+            homo_mat[:3, :3]).as_euler('xyz', degrees=True)
+        # R = np.rad2deg(R)
+
+        aa_pose = np.concatenate(
+            [t, R], axis=0
+        )
+        return aa_pose
+    
+    
     # Reset the teleoperation and get the first frame
     def _reset_teleop(self):
         # Just updates the beginning position of the arm
@@ -335,33 +355,46 @@ class PiperArmOperator(Operator):
         return gripper_state, status, gripper_fl, gripper_degree
 
     # 去掉剧烈变化的帧
-    def filter_sharp_motion(self, next_state):  
+    def filter_sharp_motion(self, next_state, type='H'):  
         MAX_DIS = self.MAX_DIS
         MAX_ANGLE = self.MAX_ANGLE
 
         if self.his_state is None:
             self.his_state = copy(self.robot.get_pose()['position'])
 
-        try:
-            H_relative = np.linalg.inv(self.his_state) @ next_state
-            R_rel = H_relative[:3, :3]
-            t_rel = H_relative[:3, 3]
-            
-            trace_val = np.trace(R_rel)
-            arg_for_acos = np.clip((trace_val - 1.0) / 2.0, -1.0, 1.0)
-            angle_rad = np.arccos(arg_for_acos)
-            angle_deg = np.rad2deg(angle_rad)
+        if type == 'H':
+            try:
+                H_relative = np.linalg.inv(self.his_state) @ next_state
+                R_rel = H_relative[:3, :3]
+                t_rel = H_relative[:3, 3]
+                
+                trace_val = np.trace(R_rel)
+                arg_for_acos = np.clip((trace_val - 1.0) / 2.0, -1.0, 1.0)
+                angle_rad = np.arccos(arg_for_acos)
+                angle_deg = np.rad2deg(angle_rad)
 
-            if np.linalg.norm(t_rel) > MAX_DIS or angle_deg > MAX_ANGLE:
+                if np.linalg.norm(t_rel) > MAX_DIS or angle_deg > MAX_ANGLE:
+                    return self.his_state
+                else:
+                    self.his_state = next_state
+                    return next_state
+                
+            except np.linalg.LinAlgError:
+                # 如果矩阵求逆失败，也认为是不安全的
+                print("矩阵求逆失败，姿态可能无效。")
+                return self.his_state
+            
+        elif type == 'euler':
+            # 转成位置+欧拉角
+            self.his_state = self._get_aa_pose(self.his_state)
+            dif_angle = np.abs(self.his_state[3:] - next_state[3:])
+            if np.linalg.norm(self.his_state[:3] - next_state[:3]) > MAX_DIS or np.sum(dif_angle) > MAX_ANGLE:
                 return self.his_state
             else:
                 self.his_state = next_state
                 return next_state
+
             
-        except np.linalg.LinAlgError:
-            # 如果矩阵求逆失败，也认为是不安全的
-            print("矩阵求逆失败，姿态可能无效。")
-            return self.his_state
         
 
     # Function to apply retargeted angles
@@ -384,6 +417,7 @@ class PiperArmOperator(Operator):
         else:
             moving_hand_frame = self._get_hand_frame()
         self.arm_teleop_state = new_arm_teleop_state
+        
         arm_teleoperation_scale_mode = self._get_resolution_scale_mode()
         # print('arm_teleoperation_scale_mode', arm_teleoperation_scale_mode)
 
@@ -393,7 +427,7 @@ class PiperArmOperator(Operator):
         elif arm_teleoperation_scale_mode == ARM_LOW_RESOLUTION:
             self.resolution_scale = 0.6
 
-        self.resolution_scale = 0.5  # !!!!!!!!!!精细操作!!!!!!!!!!!!
+        # self.resolution_scale = 0.5  # !!!!!!!!!!精细操作!!!!!!!!!!!!
 
         if moving_hand_frame is None: 
             return # It means we are not on the arm mode yet instead of blocking it is directly returning
@@ -409,8 +443,8 @@ class PiperArmOperator(Operator):
         H_HT_HH = copy(self.hand_moving_H) # Homo matrix that takes P_HT to P_HH
         # 初始机械臂→当前机械臂
         H_RI_RH = copy(self.robot_init_H) # Homo matrix that takes P_RI to P_RH
-        # print('hand_init_H\n', self.hand_init_H)
-        # print('hand_moving_H\n', self.hand_moving_H)
+        print('hand_init_H\n', self.hand_init_H)
+        print('hand_moving_H\n', self.hand_moving_H)
         # print('H_RI_RH\n', self.robot_init_H)
 
 
@@ -424,25 +458,37 @@ class PiperArmOperator(Operator):
         # 计算当前手部相对初始位姿的位姿
         H_HT_HI = np.linalg.pinv(H_HI_HH) @ H_HT_HH # Homo matrix that takes P_HT to P_HI
         # print('H_HT_HI\n', H_HT_HI)
-        # print('H_HT_HI\n', H_HT_HI[:3, 3])
+        print('  H_HT_HI  ', H_HT_HI[:3, 3])
         # 在项目目录下打开一个move.txt文件，记录一千条H_HT_HI[:3, 3]的数据，可视化
-        # with open('move.txt', 'a') as f:
-        #     f.write(str(H_HT_HH[:3, 3])+'\n')
+        with open('move.txt', 'a') as f:
+            f.write(str(H_HT_HH[:3, 3])+'\n')
 
         # VR和机械臂的坐标系转换
         R_vr2robot = np.array([[0, 0, 1, 0], [-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) 
         H_HT_HI = R_vr2robot @ H_HT_HI @ np.linalg.inv(R_vr2robot)
+        # H_HT_HI = np.linalg.inv(R_vr2robot) @ H_HT_HI @ R_vr2robot
 
         # print('H_HT_HI after trans.\n', H_HT_HI)
-        # print('H_HT_HI after trans. \n', H_HT_HI[:3, 3])
+        # print('H_HT_HI trans.', H_HT_HI[:3, 3])
         # with open('move.txt', 'a') as f:
         #     f.write(str(H_HT_HI[:3, 3])+'\n')
 
-        # 映射到机械臂
+        # print('--------------')
+        print(' --move pose--', self._get_aa_pose(H_HT_HI))
+
+
+        # 映射到机械臂控制
         # H_RT_RH = H_RI_RH @ H_A_R @ H_HT_HI @ np.linalg.pinv(H_A_R) # Homo matrix that takes P_RT to P_RH
         H_RT_RH = H_RI_RH @ H_HT_HI  # 相对于末端坐标系的移动，这里的单位是mm，坐标位置而不是控制信号
         # H_RT_RH = H_HT_HI @ H_RI_RH  # 相对于基座坐标系的移动，这里的单位是mm，坐标位置而不是控制信号
         # print('H_RT_RH\n', H_RT_RH)
+
+        # # 直接使用[位置, 欧拉角]控制末端
+        # current_pose = self._get_aa_pose(H_RI_RH)
+        # move_pose = self._get_aa_pose(H_HT_HI)
+        # # 缩放控制信号分辨率：适合精细操作
+        # scale_move_pose = self._get_scaled_euler_pose(move_pose)
+        # target_pose = current_pose + scale_move_pose
 
         # 可以根据需要设置旋转和平移矩阵
         # # This matrix will change accordingly on how you want the rotations to be.
@@ -469,16 +515,17 @@ class PiperArmOperator(Operator):
         #             [[target_rotation, target_translation.reshape(-1, 1)], [0, 0, 0, 1]])
 
         self.robot_moving_H = copy(H_RT_RH)
+        # self.robot_moving_pose = copy(target_pose)
 
         # 避免剧烈运动，需要对计算的位姿去掉剧变的点
         if self.use_filter0:
-            self.robot_moving_H = self.filter_sharp_motion(self.robot_moving_H)
+            pose_type = 'H'  # 'H' or 'euler'
+            self.robot_moving_H = self.filter_sharp_motion(self.robot_moving_H, pose_type)
+            
 
         # Use the resolution scale to get the final cart pose
         final_pose = self._get_scaled_cart_pose(self.robot_moving_H)  # (7,) 位置+姿态四元数
-        # final_pose[0:3]=final_pose[0:3]*self.factor  # 是否需要？
-        # print('final_pose', final_pose)
-
+        # final_pose = self.robot_moving_H
         
         # Apply the filter
         if self.use_filter:

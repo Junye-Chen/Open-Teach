@@ -3,7 +3,8 @@ import time
 import rospy
 from copy import deepcopy as copy
 from piper_sdk import *
-import transforms3d as tfs
+# import transforms3d as tfs
+from scipy.spatial.transform import Rotation, Slerp
 
 
 class DexArmControl():
@@ -26,7 +27,12 @@ class DexArmControl():
     def _init_robot_control(self, record_type=False):
         self.piper = C_PiperInterface_V2("can0")
         self.piper.ConnectPort()
-        self.piper.EnableArm(7)
+        # !这个函数可以恢复使能，但是会先失能导致机器人掉落
+        # 先获取机器人当前姿态，要是没有错误就不用执行这个函数
+        print(self.piper.GetArmStatus())
+        print(self.piper.GetArmJointMsgs())
+        if self.piper.GetArmStatus().arm_status == 0x04:
+            self.piper.MotionCtrl_1(emergency_stop=0x02, track_ctrl=0x00, grag_teach_ctrl=0x00)
 
         self._enable_fun(piper=self.piper)
         self.home_arm()
@@ -114,8 +120,9 @@ class DexArmControl():
         msg = self.piper.GetArmEndPoseMsgs()
         current_pos = [msg.end_pose.X_axis, msg.end_pose.Y_axis, msg.end_pose.Z_axis]
         euler_angles = [msg.end_pose.RX_axis,msg.end_pose.RY_axis,msg.end_pose.RZ_axis]
-        euler_angles = np.radians(euler_angles)
-        current_quat = tfs.euler.euler2quat(euler_angles[0], euler_angles[1], euler_angles[2], 'sxyz')
+        # euler_angles = np.radians(euler_angles)
+        # current_quat = tfs.euler.euler2quat(euler_angles[0], euler_angles[1], euler_angles[2], 'sxyz')
+        current_quat = Rotation.from_euler('xyz', euler_angles, degrees=True).as_quat()
 
         cartesian_state = dict(
             position = np.array(current_pos, dtype=np.float32).flatten(),
@@ -139,8 +146,9 @@ class DexArmControl():
         msg = self.piper.GetArmEndPoseMsgs()
         current_pos = np.array([msg.end_pose.X_axis, msg.end_pose.Y_axis, msg.end_pose.Z_axis], dtype=np.float32)
         euler_angles = np.array([msg.end_pose.RX_axis,msg.end_pose.RY_axis,msg.end_pose.RZ_axis], dtype=np.float32)
-        euler_angles = np.radians(euler_angles)
-        current_quat = tfs.euler.euler2quat(euler_angles[0], euler_angles[1], euler_angles[2], 'sxyz')
+        # euler_angles = np.radians(euler_angles)
+        # current_quat = tfs.euler.euler2quat(euler_angles[0], euler_angles[1], euler_angles[2], 'sxyz')
+        current_quat = Rotation.from_euler('xyz', euler_angles, degrees=True).as_quat()
 
         cartesian_coord = np.concatenate(
             [current_pos, current_quat],
@@ -153,8 +161,9 @@ class DexArmControl():
         msg = self.piper.GetArmEndPoseMsgs()
         current_pos = np.array([msg.end_pose.X_axis, msg.end_pose.Y_axis, msg.end_pose.Z_axis], dtype=np.float32)
         euler_angles = np.array([msg.end_pose.RX_axis,msg.end_pose.RY_axis,msg.end_pose.RZ_axis], dtype=np.float32)
-        euler_angles = np.radians(euler_angles)
-        rot_mat = tfs.euler.euler2mat(euler_angles[0], euler_angles[1], euler_angles[2], 'sxyz')
+        # euler_angles = np.radians(euler_angles)
+        # rot_mat = tfs.euler.euler2mat(euler_angles[0], euler_angles[1], euler_angles[2], 'sxyz')
+        rot_mat = Rotation.from_euler('xyz', euler_angles, degrees=True).as_matrix()
         pose[:3, :3] = rot_mat
         pose[:3, 3] = current_pos / self.factor  # 单位是mm
         pose[3, 3] = 1
@@ -241,7 +250,7 @@ class DexArmControl():
 
     # Home Robot
     def home_arm(self):
-        position = [85.0, 0.0, 280.0, 0, 85.0, 0, 80]
+        position = [85.0, 0.0, 275.0, 0, 85.0, 0, 80]
         X = round(position[0]*self.factor)
         Y = round(position[1]*self.factor)
         Z = round(position[2]*self.factor)
@@ -261,30 +270,24 @@ class DexArmControl():
     def move_robot(self, joint_angles, arm_angles):
         pass
 
-    def arm_control(self, arm_pose):
+    def arm_control(self, arm_pose):  
+        """ input: arm_pose [x, y, z, qx, qy, qz, qw] """
         pose_quat = arm_pose[3:]
         # print(pose_angle)
-        pose_mat = tfs.quaternions.quat2mat(pose_quat)
-        pose_angle = tfs.euler.mat2euler(pose_mat)
-        pose_angle = np.degrees(pose_angle)
+        # pose_mat = tfs.quaternions.quat2mat(pose_quat)
+        # pose_angle = tfs.euler.mat2euler(pose_mat)
+        pose_angle = Rotation.from_quat(pose_quat).as_euler('xyz', degrees=True)
         # print('pose_angle', pose_angle)        
         current_status = np.concatenate([arm_pose[:3], pose_angle], axis=0)
         # print('arm_pose', arm_pose[:3])
 
         arm_status = self.get_arm_osc_position()
 
-        # print('  arm_status  ', arm_status/self.factor)
+        print('  arm_status  ', arm_status/self.factor)
         # print('current_status', current_status)
-
-        # print(self.piper.GetCurrentMotorAngleLimitMaxVel())
-
-        # offsets
-        # current_status[3] = (current_status[3] - 90)  # offset for x axis angle
-        current_status[4] = (current_status[4] + 160)  # offset for y axis angle
-        current_status[5] = (current_status[5] - 80)  # offset for z axis angle
 
         # current_status = [95.0, 0.0, 260.0, 0, 85.0, 0, 80]
-        # print('current_status', current_status)
+        print('current_status', current_status)
         
         X = round(current_status[0]*self.factor)
         Y = round(current_status[1]*self.factor)
@@ -293,7 +296,7 @@ class DexArmControl():
         RY = round(current_status[4]*self.factor)
         RZ = round(current_status[5]*self.factor)
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
-        self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
+        # self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
         
 
     def set_gripper_state(self, gripper_state, gripper_degree):
@@ -301,7 +304,7 @@ class DexArmControl():
         # if not gripper_state:
         #     return
         ctrl_degree = min(100*self.factor, max(500, int(gripper_degree * scale * self.factor)))
-        print('ctrl_degree', ctrl_degree)
+        # print('ctrl_degree', ctrl_degree)
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
         self.piper.GripperCtrl(ctrl_degree, 300, 0x01, 0)
 
@@ -316,13 +319,10 @@ class DexArmControl():
 
 
 if __name__ == "__main__":
-    # dexter = DexArmControl()
-    # dexter.home_robot()
-    pose = np.zeros([4,4])
-    a = np.radians(45)
-    current_quat = tfs.euler.euler2mat(a, 0, 0, 'sxyz')
+    euler = [16.03, 9.28, 24.99]
 
-    # print(pose)
-    # print(pose.shape)
-    print(current_quat)
-    print(current_quat.shape)
+    r = Rotation.from_euler('xyz', euler, degrees=True)  # 顺序和角度
+    quat = r.as_quat()
+    print(quat)
+    euler2 = Rotation.from_quat(quat).as_euler('xyz', degrees=True)
+    print(euler2)
