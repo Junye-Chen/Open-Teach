@@ -10,8 +10,8 @@ import collections
 """
 
 # 根据输入的三维坐标，绘制其三个坐标随时间变化的曲线，将曲线绘制在三维坐标系中
-def draw_3d_curve(array, title='3D Curve', xlabel='X', ylabel='Y', zlabel='Z'):
-    x, y, z = array[0], array[1], array[2]
+def draw_3d_curve(x, y, z, title='3D Curve', xlabel='X', ylabel='Y', zlabel='Z'):
+    # x, y, z = array[0], array[1], array[2]
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.plot(x, y, z, label='3D Curve')
@@ -247,11 +247,9 @@ if __name__ == '__main__':
     print(len(x_data), len(y_data), len(z_data))
     # # 绘制三维曲线
     # plot_coordinates_over_time(np.array(x_data), np.array(y_data), np.array(z_data))
+    print(np.array(z_data).shape)
+    draw_3d_curve(np.array(x_data), np.array(y_data), np.array(z_data))
 
-
-
-    n = np.linalg.norm(np.array([3, 3, 3]))
-    print(n)
 
 
 
