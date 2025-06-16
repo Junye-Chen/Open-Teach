@@ -30,7 +30,11 @@ class Filter:
         self.ori_state = state[3:7]
         self.comp_ratio = comp_ratio
 
-    def __call__(self, next_state):
+    def __call__(self, next_state, prev_state=None):
+        if prev_state is not None:
+            self.pos_state = prev_state[:3]
+            self.ori_state = prev_state[3:7]
+
         self.pos_state = self.pos_state[:3] * self.comp_ratio + next_state[:3] * (1 - self.comp_ratio)
         ori_interp = Slerp([0, 1], Rotation.from_quat(
             np.stack([self.ori_state, next_state[3:7]], axis=0)),)
@@ -109,13 +113,13 @@ class PiperArmOperator(Operator):
         self.is_first_frame = True
         self._timer = FrequencyTimer(VR_FREQ)
 
-        self.use_filter = False
+        self.use_filter = use_filter
         # motion outlier detection
         self.use_filter0 = False
 
         if use_filter:
             robot_init_cart = self._homo2cart(self.robot_init_H)
-            self.comp_filter = Filter(robot_init_cart, comp_ratio=0.65)
+            self.comp_filter = Filter(robot_init_cart, comp_ratio=0.8)
 
         # Class variables
         self.gripper_flag = 1
@@ -221,6 +225,15 @@ class PiperArmOperator(Operator):
         )
         return cart
     
+    def _cart2homo(self, cart):
+        t = cart[:3]
+        R = Rotation.from_quat(cart[3:]).as_matrix()
+        homo_mat = np.zeros((4, 4))
+        homo_mat[:3, :3] = R
+        homo_mat[:3, 3] = t
+        homo_mat[3, 3] = 1
+        return homo_mat
+    
     # Gets the Scaled Resolution pose
     def _get_scaled_cart_pose(self, moving_robot_homo_mat):
         # Get the cart pose without the scaling
@@ -263,19 +276,46 @@ class PiperArmOperator(Operator):
         return aa_pose
     
     
-    # Reset the teleoperation and get the first frame
+    # # Reset the teleoperation and get the first frame
+    # def _reset_teleop(self):
+    #     # Just updates the beginning position of the arm
+    #     print('****** RESETTING TELEOP ****** ')
+    #     self.robot_init_H = self.robot.get_pose()['position']
+    #     first_hand_frame = self._get_hand_frame()
+    #     while first_hand_frame is None:
+    #         first_hand_frame = self._get_hand_frame()
+    #     self.hand_init_H = self._turn_frame_to_homo_mat(first_hand_frame)
+    #     self.hand_init_t = copy(self.hand_init_H[:3, 3])
+
+    #     self.is_first_frame = False
+    #     print('****** TELEOP RESETTED ***** ')
+    #     return first_hand_frame
+    
     def _reset_teleop(self):
-        # Just updates the beginning position of the arm
+        """
+        # reset the teleop state.
+        # 不再记录 "init" 状态, 而是记录 "previous" 状态，作为增量计算的起点。
+        """
         print('****** RESETTING TELEOP ****** ')
-        self.robot_init_H = self.robot.get_pose()['position']
-        first_hand_frame = self._get_hand_frame()
-        while first_hand_frame is None:
-            first_hand_frame = self._get_hand_frame()
-        self.hand_init_H = self._turn_frame_to_homo_mat(first_hand_frame)
-        self.hand_init_t = copy(self.hand_init_H[:3, 3])
+        # 获取并记录当前手部姿态作为上一帧
+        hand_frame = self._get_hand_frame()
+        while hand_frame is None:
+            hand_frame = self._get_hand_frame()
+        self.hand_prev_H = self._turn_frame_to_homo_mat(hand_frame)
+        self.hand_init_t = copy(self.hand_prev_H[:3, 3])
+        
+        # 获取并记录机器人当前姿态作为上一帧
+        # 这是实现增量控制的关键一步，确保手和机器人在复位时是对齐的。
+        self.robot_prev_H = self.robot.get_pose()['position']
+        print("robot init H\n", self.robot_prev_H)
+        if self.robot_prev_H is None:
+            print("Warning: Failed to get robot frame during reset.")
+            return None
+
+        # is_first_frame 标志仍然有用，用来处理第一次启动
         self.is_first_frame = False
         print('****** TELEOP RESETTED ***** ')
-        return first_hand_frame
+        return hand_frame
 
     # # Function to get gripper state from hand keypoints
     # def get_gripper_state_from_hand_keypoints(self):
@@ -417,7 +457,13 @@ class PiperArmOperator(Operator):
         else:
             moving_hand_frame = self._get_hand_frame()
         self.arm_teleop_state = new_arm_teleop_state
+
+        if moving_hand_frame is None: 
+            return # It means we are not on the arm mode yet instead of blocking it is directly returning
         
+        # if self.hand_prev_H is None:
+        #     self.hand_prev_H = copy(self.hand_init_H)
+
         arm_teleoperation_scale_mode = self._get_resolution_scale_mode()
         # print('arm_teleoperation_scale_mode', arm_teleoperation_scale_mode)
 
@@ -429,24 +475,20 @@ class PiperArmOperator(Operator):
 
         # self.resolution_scale = 0.5  # !!!!!!!!!!精细操作!!!!!!!!!!!!
 
-        if moving_hand_frame is None: 
-            return # It means we are not on the arm mode yet instead of blocking it is directly returning
-        # print('moving_hand_frame\n', moving_hand_frame)
         # Get the moving hand frame  # 将手部帧转换为齐次变换矩阵
         self.hand_moving_H = self._turn_frame_to_homo_mat(moving_hand_frame)
         # print('hand_moving_H\n', self.hand_moving_H)
 
         # Transformation code
         # 初始手部→当前手部
-        H_HI_HH = copy(self.hand_init_H) # Homo matrix that takes P_HI  to P_HH - Point in Inital Hand Frame to Point in current hand Frame
+        H_HI_HH = copy(self.hand_prev_H) # Homo matrix that takes P_HI  to P_HH - Point in Inital Hand Frame to Point in current hand Frame
         # 目标手部→当前手部
         H_HT_HH = copy(self.hand_moving_H) # Homo matrix that takes P_HT to P_HH
         # 初始机械臂→当前机械臂
-        H_RI_RH = copy(self.robot_init_H) # Homo matrix that takes P_RI to P_RH
-        print('hand_init_H\n', self.hand_init_H)
+        H_RI_RH = copy(self.robot_prev_H) # Homo matrix that takes P_RI to P_RH
+        print('hand_prev_H\n', self.hand_prev_H)
         print('hand_moving_H\n', self.hand_moving_H)
-        # print('H_RI_RH\n', self.robot_init_H)
-
+        print('robot_prev_H\n', self.robot_prev_H)
 
         # Rotation from allegro to franka
         # 夹抓到Piper臂的固定变换
@@ -456,16 +498,18 @@ class PiperArmOperator(Operator):
                           [0, 0, 0, 1]])  
 
         # 计算当前手部相对初始位姿的位姿
-        H_HT_HI = np.linalg.pinv(H_HI_HH) @ H_HT_HH # Homo matrix that takes P_HT to P_HI
-        # print('H_HT_HI\n', H_HT_HI)
-        print('  H_HT_HI  ', H_HT_HI[:3, 3])
+        H_HT_HI = np.linalg.inv(H_HI_HH) @ H_HT_HH # Homo matrix that takes P_HT to P_HI
+        # H_HT_HI = H_HT_HH @ np.linalg.pinv(self.hand_prev_H)
+        print('H_HT_HI\n', H_HT_HI)
+        print('  H_HT_HI  ', self._get_aa_pose(H_HT_HI))
         # 在项目目录下打开一个move.txt文件，记录一千条H_HT_HI[:3, 3]的数据，可视化
-        with open('move.txt', 'a') as f:
-            f.write(str(H_HT_HH[:3, 3])+'\n')
+        # with open('move.txt', 'a') as f:
+        #     f.write(str(H_HT_HH[:3, 3])+'\n')
 
         # VR和机械臂的坐标系转换
         R_vr2robot = np.array([[0, 0, 1, 0], [-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) 
         H_HT_HI = R_vr2robot @ H_HT_HI @ np.linalg.inv(R_vr2robot)
+        # 我认为这里应该是：手 -> 相机 -> 机器人
         # H_HT_HI = np.linalg.inv(R_vr2robot) @ H_HT_HI @ R_vr2robot
 
         # print('H_HT_HI after trans.\n', H_HT_HI)
@@ -499,9 +543,9 @@ class PiperArmOperator(Operator):
 
         # # This matrix will change accordingly on how you want the translation to be.
         # H_T_V = np.array([[0, 0 ,1, 0],
-        #                  [0 ,1, 0, 0],
-        #                  [-1, 0, 0, 0],
-        #                 [0, 0, 0, 1]])
+        #                   [0 ,1, 0, 0],
+        #                   [-1, 0, 0, 0],
+        #                   [0, 0, 0, 1]])
 
         # H_HT_HI_r=(pinv(H_R_V) @ H_HT_HI @ H_R_V)[:3,:3] 
         # H_HT_HI_t=(pinv(H_T_V) @ H_HT_HI @ H_T_V)[:3,3]
@@ -517,19 +561,19 @@ class PiperArmOperator(Operator):
         self.robot_moving_H = copy(H_RT_RH)
         # self.robot_moving_pose = copy(target_pose)
 
-        # 避免剧烈运动，需要对计算的位姿去掉剧变的点
-        if self.use_filter0:
-            pose_type = 'H'  # 'H' or 'euler'
-            self.robot_moving_H = self.filter_sharp_motion(self.robot_moving_H, pose_type)
+        # # 避免剧烈运动，需要对计算的位姿去掉剧变的点
+        # if self.use_filter0:
+        #     pose_type = 'H'  # 'H' or 'euler'
+        #     self.robot_moving_H = self.filter_sharp_motion(self.robot_moving_H, pose_type)
             
 
-        # Use the resolution scale to get the final cart pose
+        # # Use the resolution scale to get the final cart pose
         final_pose = self._get_scaled_cart_pose(self.robot_moving_H)  # (7,) 位置+姿态四元数
-        # final_pose = self.robot_moving_H
+
         
         # Apply the filter
-        if self.use_filter:
-            final_pose = self.comp_filter(final_pose)
+        if self.use_filter:  # 平滑滤波
+            final_pose = self.comp_filter(final_pose, self._homo2cart(self.robot_prev_H))
 
         # 更新抓取器状态
         gripper_state, status_change, gripper_flag, gripper_degree = self.get_gripper_state_from_hand_keypoints()
@@ -550,6 +594,10 @@ class PiperArmOperator(Operator):
         #     self.robot.arm_control(final_pose)
 
         self.robot.arm_control(final_pose)
+
+        # 【关键步骤】更新上一帧的状态，为下一次循环做准备
+        self.hand_prev_H = H_HT_HH
+        self.robot_prev_H = self._cart2homo(final_pose)
 
     def stream(self):
         self.notify_component_start('{} control'.format(self.robot.name))

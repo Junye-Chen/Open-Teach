@@ -31,7 +31,8 @@ class DexArmControl():
         # 先获取机器人当前姿态，要是没有错误就不用执行这个函数
         print(self.piper.GetArmStatus())
         print(self.piper.GetArmJointMsgs())
-        if self.piper.GetArmStatus().arm_status == 0x04:
+        ArmStatus = self.piper.GetArmStatus().arm_status
+        if ArmStatus.arm_status == 0x04 and ArmStatus.motion_status == 0x01:
             self.piper.MotionCtrl_1(emergency_stop=0x02, track_ctrl=0x00, grag_teach_ctrl=0x00)
 
         self._enable_fun(piper=self.piper)
@@ -250,7 +251,7 @@ class DexArmControl():
 
     # Home Robot
     def home_arm(self):
-        position = [85.0, 0.0, 275.0, 0, 85.0, 0, 80]
+        position = [115.0, 0.0, 250.0, 180, 65.0, 180, 80]
         X = round(position[0]*self.factor)
         Y = round(position[1]*self.factor)
         Z = round(position[2]*self.factor)
@@ -273,12 +274,9 @@ class DexArmControl():
     def arm_control(self, arm_pose):  
         """ input: arm_pose [x, y, z, qx, qy, qz, qw] """
         pose_quat = arm_pose[3:]
-        # print(pose_angle)
-        # pose_mat = tfs.quaternions.quat2mat(pose_quat)
-        # pose_angle = tfs.euler.mat2euler(pose_mat)
         pose_angle = Rotation.from_quat(pose_quat).as_euler('xyz', degrees=True)
         # print('pose_angle', pose_angle)        
-        current_status = np.concatenate([arm_pose[:3], pose_angle], axis=0)
+        target_status = np.concatenate([arm_pose[:3], pose_angle], axis=0)
         # print('arm_pose', arm_pose[:3])
 
         arm_status = self.get_arm_osc_position()
@@ -287,16 +285,40 @@ class DexArmControl():
         # print('current_status', current_status)
 
         # current_status = [95.0, 0.0, 260.0, 0, 85.0, 0, 80]
-        print('current_status', current_status)
+        print('target_status', target_status)
+        # 检查target_status的后三位符号是否和arm_status保持一致
+        # 若不一致就设为一致
+        if np.sign(target_status[3:]) != np.sign(arm_status[3:]):
+            print('  target_status  ', target_status/self.factor)
+            target_status[3:] = np.sign(target_status[3:]) * np.abs(arm_status[3:])
+            print('  target_status  ', target_status/self.factor)
+
+#         Process Process-6:
+# Traceback (most recent call last):
+#   File "/data/miniconda3/envs/openteach/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+#     self.run()
+#   File "/data/miniconda3/envs/openteach/lib/python3.10/multiprocessing/process.py", line 108, in run
+#     self._target(*self._args, **self._kwargs)
+#   File "/home/eigindustry/workspace/Open-Teach/openteach/components/initializers.py", line 175, in _start_component
+#     component.stream()
+#   File "/home/eigindustry/workspace/Open-Teach/openteach/components/operators/piper.py", line 613, in stream
+#     self._apply_retargeted_angles(log=False)
+#   File "/home/eigindustry/workspace/Open-Teach/openteach/components/operators/piper.py", line 596, in _apply_retargeted_angles
+#     self.robot.arm_control(final_pose)
+#   File "/home/eigindustry/workspace/Open-Teach/openteach/robot/piper.py", line 63, in arm_control
+#     self._controller.arm_control(cartesian_coords)
+#   File "/home/eigindustry/workspace/Open-Teach/openteach/ros_links/piper_control.py", line 291, in arm_control
+#     if np.sign(target_status[3:]) != np.sign(arm_status[3:]):
+# ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
         
-        X = round(current_status[0]*self.factor)
-        Y = round(current_status[1]*self.factor)
-        Z = round(current_status[2]*self.factor)
-        RX = round(current_status[3]*self.factor)
-        RY = round(current_status[4]*self.factor)
-        RZ = round(current_status[5]*self.factor)
+        X = round(target_status[0]*self.factor)
+        Y = round(target_status[1]*self.factor)
+        Z = round(target_status[2]*self.factor)
+        RX = round(target_status[3]*self.factor)
+        RY = round(target_status[4]*self.factor)
+        RZ = round(target_status[5]*self.factor)
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
-        # self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
+        self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
         
 
     def set_gripper_state(self, gripper_state, gripper_degree):
@@ -319,10 +341,55 @@ class DexArmControl():
 
 
 if __name__ == "__main__":
-    euler = [16.03, 9.28, 24.99]
+    # euler = [16.03, 9.28, 24.99]
 
-    r = Rotation.from_euler('xyz', euler, degrees=True)  # 顺序和角度
-    quat = r.as_quat()
-    print(quat)
-    euler2 = Rotation.from_quat(quat).as_euler('xyz', degrees=True)
-    print(euler2)
+    # r = Rotation.from_euler('xyz', euler, degrees=True)  # 顺序和角度
+    # quat = r.as_quat()
+    # print(quat)
+    # euler2 = Rotation.from_quat(quat).as_euler('xyz', degrees=True)
+    # print(euler2)
+
+    # robot = DexArmControl()
+
+    angle0 = np.array([180, 65.0, 180])
+    angle1 = np.array([180, -65.0, 180])
+
+    quat0 = Rotation.from_euler('xyz', angle0, degrees=True).as_quat()
+    quat1 = Rotation.from_euler('xyz', angle1, degrees=True).as_quat()
+    print(quat0)
+    print(quat1)
+
+    mat0 = Rotation.from_euler('xyz', angle0, degrees=True).as_matrix()
+    mat1 = Rotation.from_euler('xyz', angle1, degrees=True).as_matrix()
+    # 令这两个矩阵中小于1e-8的元素变为0
+    mat0[np.abs(mat0) < 1e-8] = 0
+    mat1[np.abs(mat1) < 1e-8] = 0
+    print(mat0)
+    print(mat1)
+
+
+
+"""
+根据你的指引我修改好了控制部分的代码，然而我发现控制效果不太理想，请你帮我分析一下原因。
+我的机器人末端初始姿态是：[115.0, 0.0, 250.0, 180, 65.0, 180]，分别代表（X,Y,Z,RX,RY,RZ）的值。
+我尝试对其进行控制的时候，发现可能存在控制信号不稳定的问题，以下是一些有用的信息：
+ --move pose-- [ 0.26  0.43 -0.21  0.02  0.    0.  ]
+  arm_status   [114.99   0.   250.17 180.    65.04 180.  ]
+target_status [ 117.68   -7.77  250.51 -179.09  -56.69 -179.14]
+
+ --move pose-- [-0.63 -0.52 -0.5  -0.07  0.1  -0.07]
+  arm_status   [114.99   0.   250.17 180.    65.04 180.  ]
+target_status [ 115.89   -7.51  250.42 -178.68  -56.46 -179.18]
+
+ --move pose-- [ 0.17  0.49 -0.2   0.63  0.08 -1.51]
+  arm_status   [114.99   0.   250.17 180.    65.04 180.  ]
+target_status [ 113.1    -8.06  250.59 -178.88  -56.45  176.08]
+
+ --move pose-- [-0.17  0.01  0.    0.16 -0.02 -0.1 ]
+  arm_status   [114.99   0.   250.17 180.    65.04 180.  ]
+target_status [112.64  -8.13 250.5  178.85 -57.04 171.73]
+
+可以看到尽管我的相对位移（move pose）很小，但是target_status却和arm_status（当前状态）有较大的偏差，这导致了目标点不可达。
+请你给出一些解决的办法和相应的代码，谢谢！
+"""
+
