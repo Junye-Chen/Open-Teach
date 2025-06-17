@@ -20,13 +20,11 @@ if __name__ == '__main__':
 cd workspace/piper_sdk/
 sudo ethtool -i can0 | grep bus
 bash can_activate.sh can0 1000000 
-bash can_activate.sh can0 1000000 "1-9:1.0"
-
-
+bash can_activate.sh can0 1000000 "1-10:1.0"
 """
 
 """
-# 启动服务器
+# 启动服务器: 不知道干什么用的
 python deploy_server.py
 
 # 运行远程操作
