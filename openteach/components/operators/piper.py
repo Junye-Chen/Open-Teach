@@ -133,13 +133,13 @@ class PiperArmOperator(Operator):
 
         self.use_filter = use_filter
         # motion outlier detection
-        self.use_filter0 = False
+        self.use_filter0 = True
         if self.use_filter0: print(' #### Using outlier detection filter... #### ')
 
         if use_filter:
             print(' #### Using filter to smooth actions... #### ')
             robot_init_cart = self._homo2cart(self.robot_init_H)
-            self.comp_filter = Filter(robot_init_cart, comp_ratio=0.75)
+            self.comp_filter = Filter(robot_init_cart, comp_ratio=0.6)
 
         # Class variables
         self.gripper_flag = 1

@@ -32,8 +32,9 @@ class DexArmControl():
         print(self.piper.GetArmStatus())
         print(self.piper.GetArmJointMsgs())
         ArmStatus = self.piper.GetArmStatus().arm_status
-        if ArmStatus.arm_status == 0x04 and ArmStatus.motion_status == 0x01:
+        if (ArmStatus.arm_status == 0x04 and ArmStatus.motion_status == 0x01) or self.check_motors(self.piper.GetArmLowSpdInfoMsgs())[0]:
             self.piper.MotionCtrl_1(emergency_stop=0x02, track_ctrl=0x00, grag_teach_ctrl=0x00)
+            self.piper.MotionCtrl_2(0, 0, 0, 0x00)
 
         self._enable_fun(piper=self.piper)
         self.home_arm()
@@ -84,6 +85,36 @@ class DexArmControl():
         if(elapsed_time_flag):
             print("程序自动使能超时,退出程序")
             exit(0)
+
+    def check_motors(info):
+        """
+        检查所有电机的状态
+        返回: (bool, dict) - (是否有错误, 错误详情)
+        """
+        error_details = {}
+        
+        for motor_num in range(1, 7):  # 1 到 6
+            motor_name = f"motor_{motor_num}"
+            motor_status = getattr(getattr(info, motor_name), "foc_status")
+            
+            # 检查所有可能的错误状态
+            error_conditions = {
+                'voltage_too_low': motor_status.voltage_too_low,
+                'motor_overheating': motor_status.motor_overheating,
+                'driver_overcurrent': motor_status.driver_overcurrent,
+                'driver_overheating': motor_status.driver_overheating,
+                'collision_status': motor_status.collision_status,
+                'driver_error_status': motor_status.driver_error_status,
+                'driver_disabled': not motor_status.driver_enable_status,
+                'stall_status': motor_status.stall_status
+            }
+            
+            # 收集该电机的所有错误
+            motor_errors = [error for error, condition in error_conditions.items() if condition]
+            if motor_errors:
+                error_details[motor_name] = motor_errors
+        
+        return bool(error_details), error_details
 
     def _init_allegro_hand_control(self):
         # for dexhand
