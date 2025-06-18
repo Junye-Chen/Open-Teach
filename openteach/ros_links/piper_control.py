@@ -32,21 +32,14 @@ class DexArmControl():
         print(self.piper.GetArmStatus())
         print(self.piper.GetArmJointMsgs())
         ArmStatus = self.piper.GetArmStatus().arm_status
+        print((ArmStatus.arm_status == 0x04 and ArmStatus.motion_status == 0x01))
+        print(self.check_motor_enable(self.piper.GetArmLowSpdInfoMsgs()))
         if (ArmStatus.arm_status == 0x04 and ArmStatus.motion_status == 0x01) or self.check_motors(self.piper.GetArmLowSpdInfoMsgs())[0]:
             self.piper.MotionCtrl_1(emergency_stop=0x02, track_ctrl=0x00, grag_teach_ctrl=0x00)
-            self.piper.MotionCtrl_2(0, 0, 0, 0x00)
+            # self.piper.MotionCtrl_2(0, 0, 0, 0x00)
 
         self._enable_fun(piper=self.piper)
         self.home_arm()
-
-        # 设置电机角度限制及最大速度
-        # self.piper.MotorAngleLimitMaxSpdSet(1, -150, -150, 2000)
-        # self.piper.MotorAngleLimitMaxSpdSet(2, 0, 180, 2000)
-        # self.piper.MotorAngleLimitMaxSpdSet(3, -170, 0, 2000)
-        # self.piper.MotorAngleLimitMaxSpdSet(4, -100, 100, 2000)
-        # self.piper.MotorAngleLimitMaxSpdSet(5, -70, 70, 2000)
-        # self.piper.MotorAngleLimitMaxSpdSet(6, -120, 120, 2000)
-
         if record_type:
             self.piper.StartRecord()
 
@@ -86,7 +79,7 @@ class DexArmControl():
             print("程序自动使能超时,退出程序")
             exit(0)
 
-    def check_motors(info):
+    def check_motors(self, info):
         """
         检查所有电机的状态
         返回: (bool, dict) - (是否有错误, 错误详情)
@@ -105,7 +98,6 @@ class DexArmControl():
                 'driver_overheating': motor_status.driver_overheating,
                 'collision_status': motor_status.collision_status,
                 'driver_error_status': motor_status.driver_error_status,
-                'driver_disabled': not motor_status.driver_enable_status,
                 'stall_status': motor_status.stall_status
             }
             
@@ -322,7 +314,7 @@ class DexArmControl():
         
 
     def set_gripper_state(self, gripper_state, gripper_degree):
-        scale = 2.
+        scale = 1
         # if not gripper_state:
         #     return
         ctrl_degree = min(100*self.factor, max(50, int(gripper_degree * scale * self.factor)))
@@ -461,7 +453,7 @@ if __name__ == "__main__":
     # (您的例子中 R[0][2] 和 R[2][0] 符号反了)
     # 为了模拟，我们构造一个绕Y轴旋转-130度的矩阵，这和[180, -65, 180]等价
     # delta_R = Rotation.from_euler('zyz', [0, -130, 0], degrees=True).as_matrix()
-    # 实际上，扰动可能更复杂，这里我们直接用您给出的“坏”矩阵作为目标
+    # 实际上，扰动可能更复杂，这里我们直接用您给出的"坏"矩阵作为目标
     # 更好的模拟是，用一个微小的扰动矩阵去乘以初始矩阵
     initial_R = Rotation.from_euler('xyz', initial_pose, degrees=True).as_matrix()
     # 假设一个微小的、几乎为单位矩阵的扰动
@@ -479,3 +471,10 @@ if __name__ == "__main__":
     # 即使内部四元数变化了，输出的欧拉角也应该是平滑过渡的
     print(f"微小扰动后的稳定欧拉角输出: {final_euler}")
     # 这个输出会非常接近 [180, 65, 180]，而不是跳变到-65
+
+
+    R_vr2robot = np.array([[0, 0, 1, 0], [0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 1]]) 
+    R_2 = np.array([[1, 0, 0, 0], [0, 0, -1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
+
+    R_vr2robot = R_2 @ R_vr2robot
+    print(R_vr2robot)

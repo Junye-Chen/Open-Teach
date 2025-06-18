@@ -133,7 +133,7 @@ class PiperArmOperator(Operator):
 
         self.use_filter = use_filter
         # motion outlier detection
-        self.use_filter0 = True
+        self.use_filter0 = False
         if self.use_filter0: print(' #### Using outlier detection filter... #### ')
 
         if use_filter:
@@ -236,24 +236,29 @@ class PiperArmOperator(Operator):
         homo_mat[3, 3] = 1
         return homo_mat
 
-    def _get_scaled_cart_pose(self, moving_robot_homo_quat):
-        # Get the cart pose without the scaling
-        unscaled_cart_pose = moving_robot_homo_quat
-
-        # Get the current cart pose
+    def _get_scaled_cart_pose(self, moving_robot_quat):
+        """
+        将四元数姿态转换为笛卡尔坐标，并应用分辨率缩放
+        Args:
+            moving_robot_quat: [x, y, z, qx, qy, qz, qw] 位置和四元数
+        Returns:
+            scaled_cart_pose: [x, y, z, qx, qy, qz, qw] 缩放后的位置和四元数
+        """
+        if moving_robot_quat is None:
+            raise ValueError("Invalid input for _get_scaled_cart_pose. moving_robot_quat cannot be None!")
+        # 获取当前位置和姿态
         current_homo_mat = copy(self.robot.get_pose()['position'])
         current_cart_pose = self._homo2cart(current_homo_mat)
-        # print('CURRENT_CART_POSE: {}'.format(current_cart_pose))
-
-        # Get the difference in translation between these two cart poses
-        diff_in_translation = unscaled_cart_pose[:3] - current_cart_pose[:3]
-        scaled_diff_in_translation = diff_in_translation * self.resolution_scale
-        # print('SCALED_DIFF_IN_TRANSLATION: {}'.format(scaled_diff_in_translation))
         
+        # 计算位置差异并应用缩放
+        diff_in_translation = moving_robot_quat[:3] - current_cart_pose[:3]
+        scaled_diff_in_translation = diff_in_translation * self.resolution_scale
+        
+        # 构建缩放后的姿态
         scaled_cart_pose = np.zeros(7)
-        scaled_cart_pose[3:] = unscaled_cart_pose[3:] # Get the rotation directly
-        scaled_cart_pose[:3] = current_cart_pose[:3] + scaled_diff_in_translation # Get the scaled translation only
-
+        scaled_cart_pose[3:] = moving_robot_quat[3:]  # 保持四元数不变
+        scaled_cart_pose[:3] = current_cart_pose[:3] + scaled_diff_in_translation  # 应用缩放后的位置差异
+        
         return scaled_cart_pose
     
     def _get_scaled_euler_pose(self, moving_robot_euler_pose):
@@ -328,44 +333,33 @@ class PiperArmOperator(Operator):
         distance = np.linalg.norm(transformed_hand_coords[OCULUS_JOINTS['index'][-1]] - 
                                 transformed_hand_coords[OCULUS_JOINTS['thumb'][-1]])
         
-        thresh = 0.03  # 距离阈值：3cm
-        gripper_fl = False
-        gripper_degree = None
+        # 设置距离范围
+        min_dist = 0.005  # 最小距离 0.5cm
+        max_dist = 0.1  # 最大距离 10cm
         
-        # 判断是否触发抓取器状态切换
-        if distance < thresh:  # 如果距离小于阈值
-            self.gripper_cnt += 1
-            if self.gripper_cnt == 1:  # 只在第一次检测到时切换状态
-                self.prev_gripper_flag = self.gripper_flag  # 保存前一个状态
-                self.gripper_flag = True   # 设置为夹住状态
-                gripper_fl = True
-                gripper_degree = distance * self.factor  # 转换单位到mm
-        else: 
-            if self.gripper_cnt > 0:  # 如果之前处于夹住状态
-                self.prev_gripper_flag = self.gripper_flag  # 保存前一个状态
-                self.gripper_flag = False   # 设置为放开状态
-                gripper_fl = True
-                gripper_degree = distance * self.factor  # 转换单位到mm
-            self.gripper_cnt = 0  # 重置计数器
+        # 将距离映射到夹抓器开合程度
+        gripper_degree = np.clip(distance * self.factor, min_dist * self.factor, max_dist * self.factor)
         
-        # 获取当前抓取器状态
-        gripper_state = np.asanyarray(self.gripper_flag).reshape(1)[0]
+        # 根据距离判断是否夹住
+        gripper_state = distance < (min_dist + max_dist) / 2
         
-        # 判断状态是否发生变化
-        status = False
-        if gripper_state != self.prev_gripper_flag:
-            status = True
-        
-        return gripper_state, status, gripper_fl, gripper_degree
+        return gripper_state, True, True, gripper_degree
 
     # 去掉剧烈变化的帧
+    # !!!! 这个函数还有bug，需要修复
     def filter_sharp_motion(self, next_state, type='H'):  
         MAX_DIS = self.MAX_DIS
-        MAX_ANGLE = self.MAX_ANGLE        
+        MAX_ANGLE = self.MAX_ANGLE     
+        first_flag = False   
 
         if self.his_state is None:
             self.his_state = copy(self.robot.get_pose()['position'])  # 4*4 matrix
+            while self.his_state is None:
+                self.his_state = copy(self.robot.get_pose()['position'])  # 4*4 matrix
             first_flag = True
+
+        print('his_state:\n', self.his_state)
+        print('next_state:\n', next_state)
 
         if type == 'H':
             try:
@@ -395,34 +389,37 @@ class PiperArmOperator(Operator):
             if first_flag:
                 self.his_state = self._get_aa_pose(self.his_state, 'zyz')
                 first_flag = False
-            else:
-                his_quat = Rotation.from_euler('zyz', self.his_state[3:], degrees=True).as_quat()
-                next_quat = Rotation.from_euler('zyz', next_state[3:], degrees=True).as_quat()
-                dot = np.dot(his_quat, next_quat)
-                dif_angle = np.arccos(np.abs(dot))
-                if dot < 0: dif_angle = 2*np.pi - dif_angle
 
-                if np.linalg.norm(self.his_state[:3] - next_state[:3]) > MAX_DIS or np.sum(dif_angle) > MAX_ANGLE:
-                    return self.his_state
-                else:
-                    self.his_state = next_state
-                    return next_state
+            his_quat = Rotation.from_euler('zyz', self.his_state[3:], degrees=True).as_quat()
+            next_quat = Rotation.from_euler('zyz', next_state[3:], degrees=True).as_quat()
+            dot = np.dot(his_quat, next_quat)
+            dif_angle = np.arccos(np.abs(dot))
+            if dot < 0: dif_angle = 2*np.pi - dif_angle
+
+            if np.linalg.norm(self.his_state[:3] - next_state[:3]) > MAX_DIS or np.sum(dif_angle) > MAX_ANGLE:
+                return self.his_state
+            else:
+                self.his_state = next_state
+                return next_state
             
         elif type == 'quat':
             # 转成位置+四元数
             if first_flag:
                 self.his_state = self._homo2cart(self.his_state)
+                print('his_state', self.his_state)
                 first_flag = False
-            else:
-                dot = np.dot(self.his_state[3:], next_state[3:])
-                dif_angle = np.arccos(np.abs(dot))
-                if dot < 0: dif_angle = 2*np.pi - dif_angle
 
-                if np.linalg.norm(self.his_state[:3] - next_state[:3]) > MAX_DIS or np.rad2deg(dif_angle) > MAX_ANGLE:
-                    return self.his_state
-                else:
-                    self.his_state = next_state
-                    return next_state
+            dot = np.dot(self.his_state[3:], next_state[3:])
+            dif_angle = np.arccos(np.abs(dot))
+            if dot < 0: dif_angle = 2*np.pi - dif_angle
+            print('dif_angle', np.rad2deg(dif_angle))
+            print('distance', np.linalg.norm(self.his_state[:3] - next_state[:3]))
+
+            if np.linalg.norm(self.his_state[:3] - next_state[:3]) > MAX_DIS or np.rad2deg(dif_angle) > MAX_ANGLE:
+                return self.his_state
+            else:
+                self.his_state = next_state
+                return next_state
                 
         else:
             raise TypeError("Error: Unknown type of input.")
@@ -480,9 +477,9 @@ class PiperArmOperator(Operator):
         #     f.write(str(H_HT_HH[:3, 3])+'\n')
 
         # VR和机械臂的坐标系转换
-        # R_vr2robot = np.array([[0, 0, 1, 0], [-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) 
-        R_vr2robot = np.array([[0, 0, 1, 0], [1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) 
-        H_HT_HI = R_vr2robot @ H_HT_HI @ np.linalg.inv(R_vr2robot)
+        R_vr2robot = np.array([[0, 0, 1, 0], [0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 1]])
+        # R_2 = np.array([[1, 0, 0, 0], [0, 0, -1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
+        H_HT_HI = R_vr2robot @ H_HT_HI @ np.linalg.inv(R_vr2robot)  # 转换到机器人坐标系
 
         # with open('move.txt', 'a') as f:
         #     f.write(str(H_HT_HI[:3, 3])+'\n')
@@ -501,13 +498,16 @@ class PiperArmOperator(Operator):
         quat_RT_RH = self._pose_stablizer.get_stable_quat_output()
  
         self.robot_moving_quat = copy(np.concatenate([t_RT_RH, quat_RT_RH], axis=0))
+        # print('robot moving quat', self.robot_moving_quat)
 
         # 避免剧烈运动，需要对计算的位姿去掉剧变的点
         if self.use_filter0:
             pose_type = 'quat'  # 'H' or 'euler' or 'quat'
             self.robot_moving_quat = self.filter_sharp_motion(self.robot_moving_quat, pose_type)
+            # print('robot moving quat', self.robot_moving_quat)
             
         # # Use the resolution scale to get the final cart pose
+        # print(' --final pose--', self.robot_moving_quat)
         final_pose = self._get_scaled_cart_pose(self.robot_moving_quat)  # (7,) 位置+姿态四元数
         
         # Apply the filter
