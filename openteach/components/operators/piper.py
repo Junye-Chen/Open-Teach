@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import zmq
+import cv2
 
 from mpl_toolkits.mplot3d import Axes3D
 from tqdm import tqdm
@@ -133,7 +134,7 @@ class PiperArmOperator(Operator):
 
         self.use_filter = use_filter
         # motion outlier detection
-        self.use_filter0 = False
+        self.use_filter0 = True
         if self.use_filter0: print(' #### Using outlier detection filter... #### ')
 
         if use_filter:
@@ -152,8 +153,8 @@ class PiperArmOperator(Operator):
         self.factor = 1000
 
         self.his_state = None
-        self.MAX_DIS = 8.
-        self.MAX_ANGLE = 20.
+        self.MAX_DIS = 5.
+        self.MAX_ANGLE = 8.
 
 
     @property
@@ -345,9 +346,8 @@ class PiperArmOperator(Operator):
         
         return gripper_state, True, True, gripper_degree
 
-    # 去掉剧烈变化的帧
-    # !!!! 这个函数还有bug，需要修复
-    def filter_sharp_motion(self, next_state, type='H'):  
+    # 限制剧烈变化的帧
+    def filter_sharp_motion(self, next_state, type='H'):
         MAX_DIS = self.MAX_DIS
         MAX_ANGLE = self.MAX_ANGLE     
         first_flag = False   
@@ -362,6 +362,8 @@ class PiperArmOperator(Operator):
         print('next_state:\n', next_state)
 
         if type == 'H':
+            if next_state[0, 3] < 0:
+                return self.his_state
             try:
                 H_relative = np.linalg.inv(self.his_state) @ next_state
                 R_rel = H_relative[:3, :3]
@@ -373,19 +375,31 @@ class PiperArmOperator(Operator):
                 angle_deg = np.rad2deg(angle_rad)
                 first_flag = False
 
-                if np.linalg.norm(t_rel) > MAX_DIS or angle_deg > MAX_ANGLE:
-                    return self.his_state
-                else:
-                    self.his_state = next_state
-                    return next_state
+                # 位置clip
+                t_norm = np.linalg.norm(t_rel)
+                if t_norm > MAX_DIS:
+                    t_rel = t_rel / t_norm * MAX_DIS
+                # 姿态clip
+                if angle_deg > MAX_ANGLE:
+                    axis, _ = cv2.Rodrigues(R_rel - np.eye(3)) if 'cv2' in globals() else (np.array([1,0,0]), None)
+                    angle_clip_rad = np.deg2rad(MAX_ANGLE)
+                    R_clip = Rotation.from_rotvec(axis * angle_clip_rad).as_matrix()
+                    R_rel = R_clip
+                # 重新组合
+                H_relative_clip = np.eye(4)
+                H_relative_clip[:3, :3] = R_rel
+                H_relative_clip[:3, 3] = t_rel
+                next_state_clip = self.his_state @ H_relative_clip
+                self.his_state = next_state_clip
+                return next_state_clip
                 
             except np.linalg.LinAlgError:
-                # 如果矩阵求逆失败，也认为是不安全的
                 print("矩阵求逆失败，姿态可能无效。")
                 return self.his_state
-            
+        
         elif type == 'euler':
-            # 转成位置+欧拉角
+            if next_state[0] < 0:
+                return self.his_state
             if first_flag:
                 self.his_state = self._get_aa_pose(self.his_state, 'zyz')
                 first_flag = False
@@ -396,31 +410,50 @@ class PiperArmOperator(Operator):
             dif_angle = np.arccos(np.abs(dot))
             if dot < 0: dif_angle = 2*np.pi - dif_angle
 
-            if np.linalg.norm(self.his_state[:3] - next_state[:3]) > MAX_DIS or np.sum(dif_angle) > MAX_ANGLE:
-                return self.his_state
+            # 位置clip
+            pos_diff = next_state[:3] - self.his_state[:3]
+            pos_norm = np.linalg.norm(pos_diff)
+            if pos_norm > MAX_DIS:
+                pos_diff = pos_diff / pos_norm * MAX_DIS
+            # 姿态clip
+            angle_deg = np.rad2deg(dif_angle)
+            if angle_deg > MAX_ANGLE:
+                comp_ratio = MAX_ANGLE / angle_deg                
+                interp = Slerp([0, 1], Rotation.from_quat(np.stack([self.his_state[3:], next_state[3:7]], axis=0)),)
+                next_quat = interp([1 - comp_ratio])[0].as_quat()
+                next_euler = Rotation.from_quat(next_quat).as_euler('zyz', degrees=True)
             else:
-                self.his_state = next_state
-                return next_state
-            
+                next_euler = next_state[3:]
+            next_state_clip = np.concatenate([self.his_state[:3] + pos_diff, next_euler])
+            self.his_state = next_state_clip
+            return next_state_clip
+        
         elif type == 'quat':
+            if next_state[0] < 0:  # 不允许危险位置
+                return self.his_state
             # 转成位置+四元数
             if first_flag:
                 self.his_state = self._homo2cart(self.his_state)
                 print('his_state', self.his_state)
                 first_flag = False
 
+            pos_diff = next_state[:3] - self.his_state[:3]
+            pos_norm = np.linalg.norm(pos_diff)
+            if pos_norm > MAX_DIS:
+                pos_diff = pos_diff / pos_norm * MAX_DIS
             dot = np.dot(self.his_state[3:], next_state[3:])
             dif_angle = np.arccos(np.abs(dot))
             if dot < 0: dif_angle = 2*np.pi - dif_angle
-            print('dif_angle', np.rad2deg(dif_angle))
-            print('distance', np.linalg.norm(self.his_state[:3] - next_state[:3]))
-
-            if np.linalg.norm(self.his_state[:3] - next_state[:3]) > MAX_DIS or np.rad2deg(dif_angle) > MAX_ANGLE:
-                return self.his_state
+            angle_deg = np.rad2deg(dif_angle)
+            if angle_deg > MAX_ANGLE:
+                comp_ratio = MAX_ANGLE / angle_deg                
+                interp = Slerp([0, 1], Rotation.from_quat(np.stack([self.his_state[3:], next_state[3:7]], axis=0)),)
+                next_quat = interp([1 - comp_ratio])[0].as_quat()
             else:
-                self.his_state = next_state
-                return next_state
-                
+                next_quat = next_state[3:]
+            next_state_clip = np.concatenate([self.his_state[:3] + pos_diff, next_quat])
+            self.his_state = next_state_clip
+            return next_state_clip
         else:
             raise TypeError("Error: Unknown type of input.")
 

@@ -32,8 +32,6 @@ class DexArmControl():
         print(self.piper.GetArmStatus())
         print(self.piper.GetArmJointMsgs())
         ArmStatus = self.piper.GetArmStatus().arm_status
-        print((ArmStatus.arm_status == 0x04 and ArmStatus.motion_status == 0x01))
-        print(self.check_motor_enable(self.piper.GetArmLowSpdInfoMsgs()))
         if (ArmStatus.arm_status == 0x04 and ArmStatus.motion_status == 0x01) or self.check_motors(self.piper.GetArmLowSpdInfoMsgs())[0]:
             self.piper.MotionCtrl_1(emergency_stop=0x02, track_ctrl=0x00, grag_teach_ctrl=0x00)
             # self.piper.MotionCtrl_2(0, 0, 0, 0x00)
@@ -273,7 +271,7 @@ class DexArmControl():
 
     # Home Robot
     def home_arm(self):
-        position = [210.0, 0.0, 220.0, 180, 45.0, 180, 50]
+        position = [220.0, 0.0, 220.0, 180, 25.0, 180, 80]
         X = round(position[0]*self.factor)
         Y = round(position[1]*self.factor)
         Z = round(position[2]*self.factor)
@@ -311,6 +309,8 @@ class DexArmControl():
         RZ = round(target_status[5]*self.factor)
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
         self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
+        # self.piper.EndPoseCtrl(X,Y,Z,180*1000,RY,180*1000)
+        # self.piper.EndPoseCtrl(X,Y,Z,180*1000,2*1000,180*1000)
         
 
     def set_gripper_state(self, gripper_state, gripper_degree):
@@ -320,7 +320,7 @@ class DexArmControl():
         ctrl_degree = min(100*self.factor, max(50, int(gripper_degree * scale * self.factor)))
         # print('ctrl_degree', ctrl_degree)
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
-        self.piper.GripperCtrl(ctrl_degree, 300, 0x01, 0)
+        self.piper.GripperCtrl(ctrl_degree, 1000, 0x01, 0)
 
         # TODO 改成步进模式控制
 
