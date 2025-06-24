@@ -38,8 +38,12 @@ class DexArmControl():
 
         self._enable_fun(piper=self.piper)
         self.home_arm()
-        if record_type:
-            self.piper.StartRecord()
+        # if record_type:
+        #     self.StartRecord()
+
+    def StartRecord(self):
+
+        pass
 
 
     def _enable_fun(self, piper:C_PiperInterface_V2):        
@@ -154,9 +158,11 @@ class DexArmControl():
         return cartesian_state
 
     def get_arm_joint_state(self):
-        msg = self.piper.GetArmJointMsgs()
+        msg = self.piper.GetArmJointMsgs()        
         joint_positions = [msg.joint_state.joint_1, msg.joint_state.joint_2, msg.joint_state.joint_3,
                         msg.joint_state.joint_4, msg.joint_state.joint_5, msg.joint_state.joint_6]
+        gripper_state = self.piper.GetArmGripperMsgs().gripper_state.grippers_angle
+        joint_positions.append(gripper_state)
 
         joint_state = dict(
             position = np.array(joint_positions, dtype=np.float32),

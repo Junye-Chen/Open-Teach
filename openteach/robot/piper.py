@@ -4,7 +4,7 @@ from .robot import RobotWrapper
 class PiperArm(RobotWrapper):
     def __init__(self, record_type=None):
         self._controller = DexArmControl(record_type=record_type, robot_type='piper')
-        self._data_frequency = 50
+        self._data_frequency = 60
 
     @property
     def recorder_functions(self):
