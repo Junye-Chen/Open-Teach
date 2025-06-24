@@ -303,9 +303,9 @@ class DexArmControl():
         pose_angle = Rotation.from_quat(pose_quat).as_euler('zyz', degrees=True)
         target_status = np.concatenate([arm_pose[:3], pose_angle], axis=0)
 
-        arm_status = self.get_arm_osc_position()
-        print('  arm_status  ', arm_status/self.factor)
-        print('target_status ', target_status)
+        # arm_status = self.get_arm_osc_position()
+        # print('  arm_status  ', arm_status/self.factor)
+        # print('target_status ', target_status)
         
         X = round(target_status[0]*self.factor)
         Y = round(target_status[1]*self.factor)
@@ -314,8 +314,8 @@ class DexArmControl():
         RY = round(target_status[4]*self.factor)
         RZ = round(target_status[5]*self.factor)
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
-        self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
-        # self.piper.EndPoseCtrl(X,Y,Z,180*1000,RY,180*1000)
+        # self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
+        self.piper.EndPoseCtrl(X,Y,Z,180*1000,RY,180*1000)
         # self.piper.EndPoseCtrl(X,Y,Z,180*1000,2*1000,180*1000)
         
 

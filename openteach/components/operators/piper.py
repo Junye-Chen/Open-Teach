@@ -358,8 +358,8 @@ class PiperArmOperator(Operator):
                 self.his_state = copy(self.robot.get_pose()['position'])  # 4*4 matrix
             first_flag = True
 
-        print('his_state:\n', self.his_state)
-        print('next_state:\n', next_state)
+        # print('his_state:\n', self.his_state)
+        # print('next_state:\n', next_state)
 
         if type == 'H':
             if next_state[0, 3] < 0:
@@ -504,7 +504,7 @@ class PiperArmOperator(Operator):
 
         # 计算当前手部相对初始位姿的位姿
         H_HT_HI = np.linalg.inv(H_HI_HH) @ H_HT_HH # Homo matrix that takes P_HT to P_HI
-        print('H_HT_HI\n', H_HT_HI)
+        # print('H_HT_HI\n', H_HT_HI)
         # 在项目目录下打开一个move.txt文件，记录一千条H_HT_HI[:3, 3]的数据，可视化
         # with open('move.txt', 'a') as f:
         #     f.write(str(H_HT_HH[:3, 3])+'\n')
@@ -517,9 +517,9 @@ class PiperArmOperator(Operator):
         # with open('move.txt', 'a') as f:
         #     f.write(str(H_HT_HI[:3, 3])+'\n')
         
-        print(' --move pose--', self._get_aa_pose(H_HT_HI))
-        diff_H_HT_HI = np.linalg.inv(self.prev_H_HT_HI) @ H_HT_HI  # 计算位姿差分
-        print(' --diff pose--', self._get_aa_pose(diff_H_HT_HI))
+        # print(' --move pose--', self._get_aa_pose(H_HT_HI))
+        # diff_H_HT_HI = np.linalg.inv(self.prev_H_HT_HI) @ H_HT_HI  # 计算位姿差分
+        # print(' --diff pose--', self._get_aa_pose(diff_H_HT_HI))
 
 
         # 映射到机械臂控制
