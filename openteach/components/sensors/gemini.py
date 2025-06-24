@@ -11,6 +11,10 @@ import time
 MIN_DEPTH = 20  # 20mm
 MAX_DEPTH = 10000  # 10000mm
 
+"""
+    这个类是用来处理Gemini相机的，定义了数据发布的方式.
+"""
+
 
 from pyorbbecsdk import (
     Config, Pipeline,
@@ -250,6 +254,7 @@ class GeminiCamera(Component):
             self.rgb_viz_publisher.stop()
         self.depth_publisher.stop()
         self.pipeline.stop()
+        
         
 if __name__ == '__main__':
 
