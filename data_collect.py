@@ -14,3 +14,8 @@ def main(configs):
 
 if __name__ == '__main__':
     main()
+
+
+"""
+python data_collect.py robot=piper demo_num=数据编号
+"""
