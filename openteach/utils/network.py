@@ -143,13 +143,10 @@ class ZMQCameraSubscriber(threading.Thread):
         # 根据我的相机修改了topic
         if self._topic_type == 'Intrinsics':
             self.socket.setsockopt(zmq.SUBSCRIBE, b"intrinsics")
-            # self.socket.setsockopt(zmq.SUBSCRIBE, b"/camera/color/camera_info")
         elif self._topic_type == 'RGB':
             self.socket.setsockopt(zmq.SUBSCRIBE, b"rgb_image")
-            # self.socket.setsockopt(zmq.SUBSCRIBE, b"/camera/color/image_raw")
         elif self._topic_type == 'Depth':
             self.socket.setsockopt(zmq.SUBSCRIBE, b"depth_image")
-            # self.socket.setsockopt(zmq.SUBSCRIBE, b"/camera/depth/image_raw")
             
 
     def recv_intrinsics(self):
