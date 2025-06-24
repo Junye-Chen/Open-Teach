@@ -38,7 +38,8 @@ class RGBImageRecorder(Recorder):
         # Storage path for file
         self._filename = filename
         self._recorder_file_name = os.path.join(storage_path, filename + '.avi')
-        self._metadata_filename = os.path.join(storage_path, filename + '.metadata')
+        # self._metadata_filename = os.path.join(storage_path, filename + '.metadata')
+        self._metadata_filename = os.path.join(storage_path, filename + '.h5')
 
         # Initializing the recorder
         if self.sim==True:
@@ -56,6 +57,7 @@ class RGBImageRecorder(Recorder):
                 IMAGE_RECORD_RESOLUTION
             )
         self.timestamps = []
+        self.rgb_frames = []
 
 
     def stream(self):
@@ -70,6 +72,7 @@ class RGBImageRecorder(Recorder):
                 image, timestamp = self.image_subscriber.recv_rgb_image()
                 assert image is not None, 'Image stream is not active.'
                 self.recorder.write(image)
+                self.rgb_frames.append(image)
                 self.timestamps.append(timestamp)
                 self.num_image_frames += 1
                 self.timer.end_loop()
@@ -85,16 +88,36 @@ class RGBImageRecorder(Recorder):
         
         # Saving the metadata
         self._add_metadata(self.num_image_frames)
-        self.metadata['timestamps'] = self.timestamps
+        # self.metadata['timestamps'] = self.timestamps
         self.metadata['recorder_ip_address'] = self._host
         self.metadata['recorder_image_stream_port'] = self._image_stream_port
 
         # Storing the data
         print('Storing the final version of the video...')
         self.recorder.release()
-        store_pickle_data(self._metadata_filename, self.metadata)
+        # store_pickle_data(self._metadata_filename, self.metadata)
+        
+        print('Compressing RGB data...')
+        with h5py.File(self._metadata_filename, "w") as f:
+            # 使用更高效的压缩算法和分块处理
+            timestamps = np.array(self.timestamps, dtype=np.float64)
+            f.create_dataset("timestamps", data=timestamps, compression="gzip", compression_opts=1)
+            stacked_frames = np.array(self.rgb_frames, dtype=np.uint8)
+            # f.create_dataset("rgb_images", data=stacked_frames, 
+            #                compression="gzip", compression_opts=1,  # 降低压缩级别以提高速度
+            #                chunks=(1, stacked_frames.shape[1], stacked_frames.shape[2], stacked_frames.shape[3]))  # 分块存储
+            f.create_dataset("rgb_images", data = stacked_frames, compression="gzip", compression_opts = 1)
+            
+            # # 保存metadata
+            # for key, value in self.metadata.items():
+            #     try:
+            #         f.create_dataset(key, data=np.array(value))
+            #     except Exception:
+            #         f.create_dataset(key, data=str(value))
+        
         print('Stored the video in {}.'.format(self._recorder_file_name))
         print('Stored the metadata in {}.'.format(self._metadata_filename))
+
 
 
 class DepthImageRecorder(Recorder):
@@ -197,7 +220,7 @@ class FishEyeImageRecorder(Recorder):
         # Storage path for file
         self._filename = filename
         self._recorder_file_name = os.path.join(storage_path, filename + '.avi')
-        self._metadata_filename = os.path.join(storage_path, filename + '.metadata')
+        self._metadata_filename = os.path.join(storage_path, filename + '.h5')
         self._pickle_filename = os.path.join(storage_path, filename + '.pkl')
 
         # Initializing the recorder
@@ -247,6 +270,11 @@ class FishEyeImageRecorder(Recorder):
         # Storing the data
         print('Storing the final version of the video...')
         self.recorder.release()
-        store_pickle_data(self._metadata_filename, self.metadata)
+        with h5py.File(self._metadata_filename, "w") as f:
+            for key, value in self.metadata.items():
+                try:
+                    f.create_dataset(key, data=np.array(value))
+                except Exception:
+                    f.create_dataset(key, data=str(value))
         print('Stored the video in {}.'.format(self._recorder_file_name))
         print('Stored the metadata in {}.'.format(self._metadata_filename))

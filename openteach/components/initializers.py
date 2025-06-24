@@ -8,6 +8,8 @@ from .recorders.sensors import XelaSensorRecorder
 from .sensors import *
 from multiprocessing import Process
 from openteach.constants import *
+import h5py
+import glob
 
 
 
@@ -245,8 +247,7 @@ class Collector(ProcessInstantiator):
         self._storage_path = os.path.join(
             self.configs.storage_path, 
             'demonstration_{}'.format(self.demo_num)
-        )
-       
+        )       
         self._create_storage_dir()        
         # Initializing the recorders
         if self.configs.sim_env is True:
@@ -412,7 +413,32 @@ class Collector(ProcessInstantiator):
                     args = (robot_controller_configs, key, )
                 ))
 
+    def _init_aloha_recorders(self):
+        # 1. 初始化robot和camera recorder，生成各自的h5文件
+        self._init_robot_recorders()
+        self._init_camera_recorders()
 
-    
+        # 2. 查找所有h5文件（假设都在self._storage_path下）
+        h5_files = glob.glob(os.path.join(self._storage_path, '*.h5'))
+        merged_h5_path = os.path.join(self._storage_path, 'aloha_merged.h5')
+
+        with h5py.File(merged_h5_path, 'w') as merged_f:
+            for h5_path in h5_files:
+                group_name = os.path.splitext(os.path.basename(h5_path))[0]
+                with h5py.File(h5_path, 'r') as src_f:
+                    # 递归复制所有内容到group
+                    def copy_group(src, dst):
+                        for key in src:
+                            if isinstance(src[key], h5py.Group):
+                                g = dst.create_group(key)
+                                copy_group(src[key], g)
+                            else:
+                                src.copy(key, dst)
+                    g = merged_f.create_group(group_name)
+                    copy_group(src_f, g)
+        # 可选：删除原始小h5文件
+        # for h5_path in h5_files:
+        #     os.remove(h5_path)
+        print(f"已合并{len(h5_files)}个h5文件到: {merged_h5_path}")
 
    
