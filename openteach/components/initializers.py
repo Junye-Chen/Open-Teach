@@ -247,14 +247,15 @@ class Collector(ProcessInstantiator):
             'demonstration_{}'.format(self.demo_num)
         )
        
-        self._create_storage_dir()
-        self._init_camera_recorders()
+        self._create_storage_dir()        
         # Initializing the recorders
         if self.configs.sim_env is True:
             self._init_sim_recorders()
         else:
             print("Initialising robot recorders")
             self._init_robot_recorders()
+
+        self._init_camera_recorders()
         
         
         if self.configs.is_xela is True:
@@ -316,7 +317,7 @@ class Collector(ProcessInstantiator):
         if self.configs.sim_env is not True:
             print("Camera recorder starting")
             for cam_idx in range(len(self.configs.robot_cam_serial_numbers)):
-                #print(cam_idx)
+                # print(self.configs.robot_cam_serial_numbers)
                 self.processes.append(Process(
                     target = self._start_rgb_component,
                     args = (cam_idx, )
@@ -326,8 +327,7 @@ class Collector(ProcessInstantiator):
                     target = self._start_depth_component,
                     args = (cam_idx, )
                 ))
-        else:
-          
+        else:          
             for cam_idx in range(self.configs.num_cams):
                 self.processes.append(Process(
                     target = self._start_rgb_component,
@@ -383,6 +383,7 @@ class Collector(ProcessInstantiator):
         self, 
         robot_configs, 
         recorder_function_key):
+        # print('recorder_function_key: ', recorder_function_key)
         component = RobotInformationRecord(
             robot_configs = robot_configs,
             recorder_function_key = recorder_function_key,
@@ -404,6 +405,7 @@ class Collector(ProcessInstantiator):
     def _init_robot_recorders(self):
         # Instantiating the robot classes
         for idx, robot_controller_configs in enumerate(self.configs.robot.controllers):
+            # print("robot_controller_configs: ", self.configs.robot.controllers)
             for key in self.configs.robot.recorded_data[idx]:
                 self.processes.append(Process(
                     target = self._start_robot_component,

@@ -19,6 +19,7 @@ class RobotInformationRecord(Recorder):
         # Data function and attributes
         self.robot = hydra.utils.instantiate(robot_configs, record_type=recorder_function_key)
         self.keypoint_function = self.robot.recorder_functions[recorder_function_key]
+        # print('Recorder function: ', self.keypoint_function)
 
         # Timer
         self.timer = FrequencyTimer(self.robot.data_frequency)
@@ -41,11 +42,12 @@ class RobotInformationRecord(Recorder):
         self.num_datapoints = 0
         self.record_start_time = time.time()
 
+        # Recording data循环
         while True:
             self.timer.start_loop()
             try:
                 datapoint = self.keypoint_function()
-                #print(datapoint.keys())
+                # print(datapoint.keys())
                 for attribute in datapoint.keys():
                     if attribute not in self.robot_information.keys():
                         self.robot_information[attribute] = [datapoint[attribute]]
@@ -66,6 +68,7 @@ class RobotInformationRecord(Recorder):
         self._add_metadata(self.num_datapoints)
 
         # Writing to dataset
+        # 采集结束后保存数据
         print('Compressing keypoint data...')
         with h5py.File(self._recorder_file_name, "w") as file:
             # Main data
