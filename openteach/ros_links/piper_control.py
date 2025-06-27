@@ -1,6 +1,6 @@
 import numpy as np
 import time
-import rospy
+# import rospy
 from copy import deepcopy as copy
 from piper_sdk import *
 # import transforms3d as tfs
@@ -250,6 +250,7 @@ class DexArmControl():
         RZ = round(current_status[5])
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
         self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
+        # self.piper.EndPoseCtrl(X,Y,Z,180*1000,RY,180*1000)
 
         
     # Get the robot joint/cartesian position
@@ -277,7 +278,9 @@ class DexArmControl():
 
     # Home Robot
     def home_arm(self):
-        position = [220.0, 0.0, 220.0, 180, 25.0, 180, 80]
+        # position = [220.0, 0.0, 220.0, 180, 25.0, 180, 80]
+        position = [220.0, 0.0, 250.0, 180, 25.0, 180, 80]
+
         X = round(position[0]*self.factor)
         Y = round(position[1]*self.factor)
         Z = round(position[2]*self.factor)
@@ -314,12 +317,18 @@ class DexArmControl():
         RY = round(target_status[4]*self.factor)
         RZ = round(target_status[5]*self.factor)
         self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
+        # infer测试
         # self.piper.EndPoseCtrl(X,Y,Z,RX,RY,RZ)
+        # 采集数据
         self.piper.EndPoseCtrl(X,Y,Z,180*1000,RY,180*1000)
+
         # self.piper.EndPoseCtrl(X,Y,Z,180*1000,2*1000,180*1000)
         
 
     def set_gripper_state(self, gripper_state, gripper_degree):
+        """ input: 
+            gripper_degree: float , 单位是mm
+        """
         scale = 1
         # if not gripper_state:
         #     return

@@ -120,9 +120,12 @@ class DETRVAE(nn.Module):
             all_cam_features = []
             all_cam_pos = []
             featuress, poss = self.backbones[0](image.flatten(0, 1)) # HARDCODED
-            featuress = featuress[0].view(image.shape[0], 2, 384, 16, 22) # take the last layer feature
+            featuress = featuress[0].view(image.shape[0], -1, 384, 16, 22) # take the last layer feature
+            # print('featuress', featuress.shape)
+            # print('camera_names', self.camera_names)
             pos = poss[0]
             for cam_id, cam_name in enumerate(self.camera_names):
+                # print('cam_id', cam_id, 'cam_name', cam_name)
                 # start = time.time()
                 # import ipdb; ipdb.set_trace()
                 features = featuress[:, cam_id] # HARDCODED
@@ -153,6 +156,7 @@ class DETRVAE(nn.Module):
             env_state = self.input_proj_env_state(env_state)
             transformer_input = torch.cat([qpos, env_state], axis=1) # seq length = 2
             hs = self.transformer(transformer_input, None, self.query_embed.weight, self.pos.weight)[0]
+            
         a_hat = self.action_head(hs)
         is_pad_hat = self.is_pad_head(hs)
         return a_hat, is_pad_hat, [mu, logvar]

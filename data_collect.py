@@ -18,4 +18,6 @@ if __name__ == '__main__':
 
 """
 python data_collect.py robot=piper demo_num=数据编号
+
+python data_collect.py robot=piper demo_num=0
 """

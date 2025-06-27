@@ -16,6 +16,8 @@ def synchronize_and_merge_data(
         joint_states_path (str): piper_joint_states .h5 文件的路径。
         output_path (str): 合并后的目标 .h5 文件的保存路径。
     """
+    if os.path.exists(output_path):
+        return
 
     print(f"正在从 {cam_video_path} 读取相机数据...")
     with h5py.File(cam_video_path, 'r') as cam_file:
@@ -70,13 +72,14 @@ def synchronize_and_merge_data(
         joint_start_idx_for_cam_frame = np.argmin(np.abs(cropped_joint_timestamps - cam_time))
         
         # 检查是否还有足够的机器人数据可以取两帧
-        if joint_start_idx_for_cam_frame + 1 < len(cropped_joint_timestamps):
+        # if joint_start_idx_for_cam_frame + 1 < len(cropped_joint_timestamps):
+        if joint_start_idx_for_cam_frame < len(cropped_joint_timestamps):
             # 取两帧机器人数据
             merged_images.append(cam_rgb_images[i])
             merged_states.append(cropped_joint_positions[joint_start_idx_for_cam_frame])
-            merged_states.append(cropped_joint_positions[joint_start_idx_for_cam_frame + 1])
+            # merged_states.append(cropped_joint_positions[joint_start_idx_for_cam_frame + 1])
             merged_actions.append(cropped_joint_actions[joint_start_idx_for_cam_frame])
-            merged_actions.append(cropped_joint_actions[joint_start_idx_for_cam_frame + 1])
+            # merged_actions.append(cropped_joint_actions[joint_start_idx_for_cam_frame + 1])
         else:
             # 如果机器人数据不够了，停止合并
             print(f"机器人数据不足，在相机帧 {i} 停止合并。")
@@ -103,8 +106,12 @@ def synchronize_and_merge_data(
 
 
 if __name__ == '__main__':
-    cam_file = './extracted_data/demonstration_5/cam_0_rgb_video.h5'
-    robot_file = 'extracted_data/demonstration_5/piper_joint_states.h5'
-    output_path = 'extracted_data/demonstration_5/merged_data_zip.h5'
+    import os
 
-    synchronize_and_merge_data(cam_file, robot_file, output_path)
+    folder = '/home/eigindustry/workspace/Open-Teach/extracted_data/banana'
+    for f in os.listdir(folder):
+        cam_file = os.path.join(folder, f, 'cam_0_rgb_video.h5')
+        robot_file = os.path.join(folder, f, 'piper_joint_states.h5')
+        output_path = os.path.join(folder, f,'processed_episode_data.h5')
+
+        synchronize_and_merge_data(cam_file, robot_file, output_path)

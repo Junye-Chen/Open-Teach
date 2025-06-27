@@ -17,7 +17,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         self.norm_stats = norm_stats
         self.is_sim = None
         self.max_pad_len = 200
-        action_str = 'qpos_action'
+        action_str = 'actions'
 
         self.history_stack = history_stack
 
@@ -33,18 +33,24 @@ class EpisodicDataset(torch.utils.data.Dataset):
         self.actions = []
 
         for i, episode_id in enumerate(self.episode_ids):
-            self.dataset_paths.append(os.path.join(self.dataset_dir, f'processed_episode_{episode_id}.hdf5'))
+            self.dataset_paths.append(os.path.join(dataset_dir, f'demo_{episode_id}', 'processed_episode_data.h5'))
             root = h5py.File(self.dataset_paths[i], 'r')
             self.roots.append(root)
-            self.is_sims.append(root.attrs['sim'])
+            # 判断数据里面是否存在sim标签,如果存在就添加到列表中
+            if 'sim' in root.attrs:
+                self.is_sims.append(root.attrs['sim'])
             self.original_action_shapes.append(root[action_str].shape)
 
-            self.states.append(np.array(root['observation.state']))
+            self.states.append(np.array(root['observations']['state']))
             for cam_name in self.camera_names:
-                self.image_dict[cam_name].append(root[f'observation.image.{cam_name}'])
+                # print(f"Loading {cam_name} images...", root[f'observations']['images'][f'{cam_name}'].shape)
+                # 打印图像的类型
+                # print(type(root[f'observations']['images'][f'{cam_name}'][0]))
+                self.image_dict[cam_name].append(root[f'observations']['images'][f'{cam_name}'])
             self.actions.append(np.array(root[action_str]))
 
-        self.is_sim = self.is_sims[0]
+        if len(self.is_sims) > 0:
+            self.is_sim = self.is_sims[0]
 
         self.episode_len = episode_len
         self.cumulative_len = np.cumsum(self.episode_len)
@@ -83,7 +89,8 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
         image_dict = dict()
         for cam_name in self.camera_names:
-            image_dict[cam_name] = self.image_dict[cam_name][index][start_ts]
+            # print(f"Loading {cam_name} images...", self.image_dict[cam_name][index][start_ts].shape)
+            image_dict[cam_name] = self.image_dict[cam_name][index][start_ts].transpose(2, 0, 1) # (h, w, c) -> (c, h, w)
         # get all actions after and including start_ts
         all_time_action = self.actions[index][:]
 
@@ -123,15 +130,16 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
 
 def get_norm_stats(dataset_dir, num_episodes):
-    action_str = 'qpos_action'
+    action_str = 'actions'
     all_qpos_data = []
     all_action_data = []
     all_episode_len = []
     for episode_idx in range(num_episodes):
-        dataset_path = os.path.join(dataset_dir, f'processed_episode_{episode_idx}.hdf5')
+        dataset_path = os.path.join(dataset_dir, f'demo_{episode_idx}', 'merged_data_zip.h5')
         with h5py.File(dataset_path, 'r') as root:
-            qpos = root['observation.state'][()]
-            action = root[action_str][()]
+            # print('root', root['observations']['state'])
+            qpos = root['observations']['state'][()].astype('float32')
+            action = root[action_str][()].astype('float32')
         all_qpos_data.append(torch.from_numpy(qpos))
         all_action_data.append(torch.from_numpy(action))
         all_episode_len.append(len(qpos))
@@ -193,8 +201,8 @@ def load_data(dataset_dir, camera_names, batch_size_train, batch_size_val):
     # construct dataset and dataloader
     train_dataset = EpisodicDataset(train_indices, dataset_dir, camera_names, norm_stats, train_episode_len_l)
     val_dataset = EpisodicDataset(val_indices, dataset_dir, camera_names, norm_stats, val_episode_len_l)
-    train_dataloader = DataLoader(train_dataset, batch_sampler=batch_sampler_train, pin_memory=True, num_workers=24, prefetch_factor=2)
-    val_dataloader = DataLoader(val_dataset, batch_sampler=batch_sampler_val, pin_memory=True, num_workers=16, prefetch_factor=2)
+    train_dataloader = DataLoader(train_dataset, batch_sampler=batch_sampler_train, pin_memory=True, num_workers=12, prefetch_factor=2)
+    val_dataloader = DataLoader(val_dataset, batch_sampler=batch_sampler_val, pin_memory=True, num_workers=12, prefetch_factor=2)
 
     return train_dataloader, val_dataloader, norm_stats, train_dataset.is_sim
 
