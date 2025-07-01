@@ -4,6 +4,32 @@
 
 [Paper](https://arxiv.org/abs/2403.07870) [Website](https://open-teach.github.io/)
 
+## ACT模型训练
+
+### 1. 安装依赖
+
+```
+conda create -n tv python=3.10
+conda activate tv
+pip install -r requirements.txt
+cd act/detr && pip install -e .
+```
+### 2. 训练命令
+
+```
+# 训练ACT模型
+python imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --taskid banana --exptid banana-0
+# 测试ACT模型
+python infer_episodes.py --policy_class ACT --seed 0 --taskid banana_crop --exptid banana-1 --num_epochs 1 --onscreen_render
+```
+
+### 3. 修改数据集
+```
+# act/utils.py
+self.dataset_paths.append(os.path.join(dataset_dir, f'demo_{episode_id}', 'processed_episode_data.h5'))
+```
+---
+
 This is the official implementation of the Open Teach including unity scripts for the VR application, teleoperation pipeline and demonstration collection pipeline.
 
 Open Teach consists of two parts. 
