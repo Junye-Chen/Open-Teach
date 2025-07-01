@@ -48,6 +48,9 @@ class PiperArm(RobotWrapper):
     
     def set_gripper_state(self, gripper_state, gripper_degree):
         return self._controller.set_gripper_state(gripper_state, gripper_degree)
+    
+    def set_gripper(self, gripper_degree):
+        return self._controller.set_gripper(gripper_degree)
 
     # Movement functions
     def home(self):

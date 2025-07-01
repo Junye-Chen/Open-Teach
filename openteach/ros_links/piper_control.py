@@ -227,7 +227,8 @@ class DexArmControl():
         joint_3 = round(current_angles[3])
         joint_4 = round(current_angles[4])
         joint_5 = round(current_angles[5])
-        self.piper.MotionCtrl_2(0x01, 0x01, 100, 0x00)
+        self.piper.MotionCtrl_2(0x01, 0x01, 80, 0x00)
+        print("Move Joints:", joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
         self.piper.JointCtrl(joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
 
     def move_arm_cartesian(self, cartesian_pos, duration=3):
@@ -338,6 +339,14 @@ class DexArmControl():
         self.piper.GripperCtrl(ctrl_degree, 1000, 0x01, 0)
 
         # TODO 改成步进模式控制
+
+    def set_gripper(self, gripper_degree, force=1000):
+        """ input: 
+            gripper_degree: int
+        """
+        ctrl_degree = min(100*self.factor, max(0, int(gripper_degree)))
+        self.piper.GripperCtrl(ctrl_degree, force, 0x01, 0)
+
 
 
     #Home the Robot
