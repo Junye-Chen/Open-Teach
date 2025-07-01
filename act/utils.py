@@ -135,7 +135,7 @@ def get_norm_stats(dataset_dir, num_episodes):
     all_action_data = []
     all_episode_len = []
     for episode_idx in range(num_episodes):
-        dataset_path = os.path.join(dataset_dir, f'demo_{episode_idx}', 'merged_data_zip.h5')
+        dataset_path = os.path.join(dataset_dir, f'demo_{episode_idx}', 'processed_episode_data.h5')
         with h5py.File(dataset_path, 'r') as root:
             # print('root', root['observations']['state'])
             qpos = root['observations']['state'][()].astype('float32')

@@ -225,14 +225,14 @@ if __name__ == '__main__':
     y_data = []
     z_data = []
     # 按行读取txt文件中的数据
-    with open('/home/eigindustry/workspace/Open-Teach/move.txt', 'r') as f:
+    with open('/home/eigindustry/workspace/Open-Teach/inference/actions/result_policy_last.txt', 'r') as f:
         for line in f.readlines():
             # 去掉每行末尾的换行符
             line = line.strip()
             # 按空格分割每行数据
-            line = line[1:-1]
+            # line = line[1:-1]
             # print(line)
-            data = line.split()
+            data = line.split(",")
             # print(data[0])
             # break
             # 转换数据类型
