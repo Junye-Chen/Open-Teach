@@ -370,9 +370,10 @@ if __name__ == '__main__':
     LOG_DIR = (DATA_DIR / 'logs/').resolve()
     print(f"RECORD_DIR: {RECORD_DIR}")
 
-    # main(args)
+    main(args)
 
 """
+训练ACT模型
 python imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --taskid banana --exptid banana-0
 
 python imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 16 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --taskid banana_crop --exptid banana-1
