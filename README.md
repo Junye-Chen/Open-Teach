@@ -30,6 +30,32 @@ self.dataset_paths.append(os.path.join(dataset_dir, f'demo_{episode_id}', 'proce
 ```
 ---
 
+## Quickstart
+打开新的终端:
+```
+# 连接机器人：
+cd workspace/piper_sdk/
+sudo ethtool -i can0 | grep bus
+bash can_activate.sh can0 1000000 
+# or
+bash can_activate.sh can0 1000000 "1-10:1.0"
+```
+运行PC后端服务:
+```
+# 运行远程操作
+python teleop.py robot=piper
+```
+录制数据集:
+```
+# 打开 `data_collect.py`
+python data_collect.py robot=piper demo_num=<数据编号>
+
+# 例如
+python data_collect.py robot=piper demo_num=0
+```
+---
+
+
 This is the official implementation of the Open Teach including unity scripts for the VR application, teleoperation pipeline and demonstration collection pipeline.
 
 Open Teach consists of two parts. 
