@@ -218,8 +218,11 @@ class GeminiCamera(Component):
             #try:
                 self.timer.start_loop()
                 color_image, depth_image, timestamp = self.get_rgb_depth_images()
-                # color_image, timestamp = self.get_rgb_depth_images()
-                # print('timestamp', timestamp)
+                # color_image = np.array([480, 640, 3], dtype=np.uint8)
+                # depth_image = np.array([480, 640, 1])
+                # timestamp = time.time()
+        
+                # print('color_image', color_image.shape)
 
                 # 打开窗口显示color_image
                 # cv2.imshow("color", color_image)

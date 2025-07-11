@@ -228,7 +228,7 @@ class DexArmControl():
         joint_4 = round(current_angles[4])
         joint_5 = round(current_angles[5])
         self.piper.MotionCtrl_2(0x01, 0x01, 80, 0x00)
-        print("Move Joints:", joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
+        # print("Move Joints:", joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
         self.piper.JointCtrl(joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
 
     def move_arm_cartesian(self, cartesian_pos, duration=3):

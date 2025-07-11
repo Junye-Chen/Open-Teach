@@ -162,9 +162,11 @@ class TeleOperator(ProcessInstantiator):
             self._init_sim_environment()
         # Start the Hand Detector
         self._init_detector()
+
         # Start the keypoint transform
         self._init_keypoint_transform()
         self._init_visualizers()
+        
         # Start the sensors
         self._init_sensors()
 

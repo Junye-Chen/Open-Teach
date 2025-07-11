@@ -25,7 +25,9 @@ class TransformHandPositionCoords(Component):
 
     # Function to get the hand coordinates from the VR
     def _get_hand_coords(self):
+        # print('before get right key point ')
         data = self.original_keypoint_subscriber.recv_keypoints()
+        # print('get the hand coordinates from the VR', data)
         if data[0] == 0:
             data_type = 'absolute'
         else:
@@ -72,11 +74,11 @@ class TransformHandPositionCoords(Component):
         return transformed_hand_coords, hand_dir_frame
 
     def stream(self):
+        print('Starting the keypoint position transform process.')
         while True:
             try:
                 self.timer.start_loop()
                 data_type, hand_coords = self._get_hand_coords()
-
                
                 # Shift the points to required axes
                 transformed_hand_coords, translated_hand_coord_frame = self.transform_keypoints(hand_coords)
@@ -87,12 +89,14 @@ class TransformHandPositionCoords(Component):
                     self.coord_moving_average_queue, 
                     self.moving_average_limit
                 )
+                # print('averaged_hand_coords', self.averaged_hand_coords)
 
                 self.averaged_hand_frame = moving_average(
                     translated_hand_coord_frame, 
                     self.frame_moving_average_queue, 
                     self.moving_average_limit
                 )
+                # print('averaged_hand_frame', self.averaged_hand_frame)
 
                 self.transformed_keypoint_publisher.pub_keypoints(self.averaged_hand_coords, 'transformed_hand_coords')
                 if data_type == 'absolute':

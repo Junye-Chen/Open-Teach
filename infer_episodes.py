@@ -114,7 +114,7 @@ def eval_policy(config, ckpt_name, save_episode=True):
                     
                 image_list.append(camera.get_image())
                 qpos_numpy = np.array(robot.get_joint_position())
-                print('qpos_numpy', qpos_numpy)
+                # print('qpos_numpy', qpos_numpy)
                 qpos = pre_process(qpos_numpy)
                 qpos = torch.from_numpy(qpos).float().cuda().unsqueeze(0)
                 qpos_history[:, t] = qpos
@@ -146,17 +146,17 @@ def eval_policy(config, ckpt_name, save_episode=True):
                 # print('raw_action', raw_action)
                 action = post_process(raw_action)
                 target_qpos = action
-                print('t_qpos', target_qpos)
+                # print('t_qpos', target_qpos)
                 
                 # 执行动作
-                # robot.move(target_qpos[:6])  # 关节角度
-                gripper_offset = 1000*2
+                robot.move(target_qpos[:6])  # 关节角度
+                gripper_offset = 1000
                 robot.set_gripper(target_qpos[6] - gripper_offset)  # 夹爪状态
 
                 qpos_list.append(qpos_numpy)
                 target_qpos_list.append(target_qpos)
                 infer_timer.end_loop()
-                # print('freq:', 1/(time.time() - start_time))
+                print('freq:', 1/(time.time() - start_time), 'Hz')
 
             plt.close()
             
@@ -182,11 +182,13 @@ def eval_policy(config, ckpt_name, save_episode=True):
 
     cv2.destroyAllWindows()
     # 保存结果
-    result_file_name = 'result_' + ckpt_name.split('.')[0] + '.txt'
-    with open(os.path.join('inference', 'actions', result_file_name), 'w') as f:
-        for qpos in target_qpos_list:
-            np.savetxt(f, [qpos], fmt='%.4f', delimiter=', ', newline='\n')
-            # f.write('\n')
+    save_actions = False
+    if save_actions:
+        result_file_name = 'result_' + ckpt_name.split('.')[0] + '.txt'
+        with open(os.path.join('inference', 'actions', result_file_name), 'w') as f:
+            for qpos in target_qpos_list:
+                np.savetxt(f, [qpos], fmt='%.4f', delimiter=', ', newline='\n')
+        print(f'Saved actions: {result_file_name}')
 
     # print('qpos_history', qpos_history)
 
@@ -196,7 +198,7 @@ def parse_args():
     parser.add_argument('--ckpt_name', type=str, default='policy_last.ckpt', help='模型权重文件名')
     parser.add_argument('--policy_class', type=str, default='ACT', help='策略类别')
     # parser.add_argument('--task_name', type=str, required=True, help='任务名')
-    parser.add_argument('--episode_len', type=int, default=100, help='每个episode步数')
+    parser.add_argument('--episode_len', type=int, default=130, help='每个episode步数')
     parser.add_argument('--state_dim', type=int, default=7, help='状态维度')
     parser.add_argument('--action_dim', type=int, default=7, help='动作维度')
     parser.add_argument('--num_rollouts', type=int, default=1, help='推理回合数')
@@ -268,17 +270,13 @@ def main():
 
 if __name__ == '__main__':
     main() 
-
     # import time
-
     # robot = PiperArm()
     # position = [0, 70000, -44000, 0, 44000, 0, 80000]
     # robot.move(position[:6])
     # time.sleep(0.1)
     # position = [-1949, 71571, -46483, 1165, 44134, -1992, 85000]
     # robot.move(position[:6])
-
-
 
 """
 python infer_episodes.py --policy_class ACT --seed 0 --taskid banana --exptid banana-0 --num_epochs 1 --onscreen_render --ckpt_name 
